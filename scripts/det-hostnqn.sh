@@ -12,8 +12,8 @@ fi
 # convert UUID to lower-case only:
 UUID=$(echo $UUID | tr '[:upper:]' '[:lower:]')
 
-# check UUID format, e.g.: 4c4c4544-0156-4z10-8134-b7d04f383232, so: 8-4-4-4-12
-if ! [[ $UUID =~ ^[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}$ ]] ; then
+# check UUID format, e.g.: 4c4c4544-0156-4a10-8134-b7d04f383232, so: 8-4-4-4-12
+if ! [[ $UUID =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] ; then
 	>&2 echo "UUID has invalid format."
 	>&2 echo "Invalid UUID: ${UUID}"
 	exit 2
@@ -26,7 +26,7 @@ fi
 # is likely that the UUID is fake.
 FIRST_GROUP="$(echo $UUID | cut -d'-' -f1)"
 LAST_GROUP="$(echo $UUID | cut -d'-' -f5)"
-for i in {{0..9},{a..z}} ; do
+for i in {{0..9},{a..f}} ; do
 	COUNT_TOTAL="${UUID//[^$i]}"
 	COUNT_FIRST="${FIRST_GROUP//[^$i]}"
 	COUNT_LAST="${LAST_GROUP//[^$i]}"
