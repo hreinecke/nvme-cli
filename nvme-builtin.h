@@ -54,6 +54,8 @@ COMMAND_LIST(
 	ENTRY("io-passthru", "Submit an arbitrary IO command, return results", io_passthru)
 	ENTRY("security-send", "Submit a Security Send command, return results", sec_send)
 	ENTRY("security-recv", "Submit a Security Receive command, return results", sec_recv)
+	ENTRY("authentication-send", "Submit an Authentication Send command, return results", auth_send)
+	ENTRY("authentication-recv", "Submit an Authentication Receive command, return results", auth_recv)
 	ENTRY("get-lba-status", "Submit a Get LBA Status command, return results", get_lba_status)
 	ENTRY("resv-acquire", "Submit a Reservation Acquire, return results", resv_acquire)
 	ENTRY("resv-register", "Submit a Reservation Register, return results", resv_register)

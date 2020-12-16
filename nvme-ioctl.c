@@ -744,6 +744,44 @@ int nvme_set_property(int fd, int offset, uint64_t value)
 	return nvme_submit_admin_passthru(fd, &cmd);
 }
 
+int nvme_auth_send(int fd, __u8 secp, __u16 spsp, __u32 tl,
+		   __u32 data_len, void *data, __u32 *result)
+{
+	struct nvme_passthru_cmd cmd = {
+		.opcode		= nvme_fabrics_command,
+		.nsid		= nvme_fabrics_type_auth_send,
+		.addr		= (__u64)(uintptr_t) data,
+		.data_len	= data_len,
+		.cdw10		= secp << 24 | spsp << 8,
+		.cdw11		= tl,
+	};
+	int err;
+
+	err = nvme_submit_admin_passthru(fd, &cmd);
+	if (!err && result)
+		*result = cmd.result;
+	return err;
+}
+
+int nvme_auth_recv(int fd, __u8 secp, __u16 spsp, __u32 al,
+		   __u32 data_len, void *data, __u32 *result)
+{
+	struct nvme_passthru_cmd cmd = {
+		.opcode		= nvme_fabrics_command,
+		.nsid		= nvme_fabrics_type_auth_receive,
+		.addr		= (__u64)(uintptr_t) data,
+		.data_len	= data_len,
+		.cdw10		= secp << 24 | spsp << 8,
+		.cdw11		= al,
+	};
+	int err;
+
+	err = nvme_submit_admin_passthru(fd, &cmd);
+	if (!err && result)
+		*result = cmd.result;
+	return err;
+}
+
 int nvme_get_feature(int fd, __u32 nsid, __u8 fid, __u8 sel, __u32 cdw11,
 		     __u8 uuid_index, __u32 data_len, void *data, __u32 *result)
 {

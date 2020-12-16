@@ -3945,6 +3945,192 @@ ret:
 	return nvme_status_to_errno(err, false);
 }
 
+static int auth_send(int argc, char **argv, struct command *cmd, struct plugin *plugin)
+{
+	struct stat sb;
+	const char *desc = "Transfer authentication protocol data to "\
+		"a controller. Authentication Receives for the same protocol "\
+		"should be performed after Authentication Sends. The "\
+		"authenticate protocol field associates Authentication Sends "\
+		"(authentication-send) and Authentication Receives "\
+		"(authentication-recv).";
+	const char *file = "transfer payload";
+	const char *secp = "security protocol (cf. SPC-4)";
+	const char *spsp = "security-protocol-specific (cf. SPC-4)";
+	const char *tl = "transfer length (cf. SPC-4)";
+	int err, fd, auth_fd = -1;
+	void *auth_buf;
+	unsigned int auth_size;
+	__u32 result;
+
+	struct config {
+		char  *file;
+		__u8  secp;
+		__u16 spsp;
+		__u32 tl;
+	};
+
+	struct config cfg = {
+		.file = "",
+		.secp = 0,
+		.spsp = 0,
+		.tl   = 0,
+	};
+
+	OPT_ARGS(opts) = {
+		OPT_FILE("file",         'f', &cfg.file,         file),
+		OPT_BYTE("secp",         'p', &cfg.secp,         secp),
+		OPT_SHRT("spsp",         's', &cfg.spsp,         spsp),
+		OPT_UINT("tl",           't', &cfg.tl,           tl),
+		OPT_END()
+	};
+
+	err = fd = parse_and_open(argc, argv, desc, opts);
+	if (fd < 0)
+		goto ret;
+
+	auth_fd = open(cfg.file, O_RDONLY);
+	if (auth_fd < 0) {
+		fprintf(stderr, "Failed to open %s: %s\n",
+				cfg.file, strerror(errno));
+		err = -EINVAL;
+		goto close_fd;
+	}
+
+	err = fstat(auth_fd, &sb);
+	if (err < 0) {
+		perror("fstat");
+		goto close_sec_fd;
+	}
+
+	auth_size = sb.st_size;
+	if (posix_memalign(&auth_buf, getpagesize(), auth_size)) {
+		fprintf(stderr, "No memory for security size:%d\n", auth_size);
+		err = -ENOMEM;
+		goto close_sec_fd;
+	}
+
+	err = read(auth_fd, auth_buf, auth_size);
+	if (err < 0) {
+		err = -errno;
+		fprintf(stderr, "Failed to read data from security file"
+				" %s with %s\n", cfg.file, strerror(errno));
+		goto free;
+	}
+
+	err = nvme_auth_send(fd, cfg.secp, cfg.spsp, cfg.tl,
+			     auth_size, auth_buf, &result);
+	if (err < 0)
+		perror("authentication-send");
+	else if (err != 0)
+		fprintf(stderr, "NVME Authentication Send Command Error:%d\n",
+			err);
+	else
+		printf("NVME Authentication Send Command Success:%d\n", result);
+
+free:
+	free(auth_buf);
+close_sec_fd:
+	close(auth_fd);
+close_fd:
+	close(fd);
+ret:
+	return nvme_status_to_errno(err, false);
+}
+
+static int auth_recv(int argc, char **argv, struct command *cmd, struct plugin *plugin)
+{
+	struct stat sb;
+	const char *desc = "Transfer authentication protocol data from "\
+		"a controller. Authentication Receives for the same protocol "\
+		"should be performed after Authentication Sends. The "\
+		"authenticate protocol field associates Authentication Sends "\
+		"(authentication-send) and Authentication Receives "\
+		"(authentication-recv).";
+	const char *file = "transfer payload";
+	const char *secp = "security protocol (cf. SPC-4)";
+	const char *spsp = "security-protocol-specific (cf. SPC-4)";
+	const char *al = "allocation length (cf. SPC-4)";
+	int err, fd, auth_fd = -1;
+	void *auth_buf;
+	unsigned int auth_size;
+	__u32 result;
+
+	struct config {
+		char  *file;
+		__u8  secp;
+		__u16 spsp;
+		__u32 al;
+	};
+
+	struct config cfg = {
+		.file = "",
+		.secp = 0,
+		.spsp = 0,
+		.al   = 0,
+	};
+
+	OPT_ARGS(opts) = {
+		OPT_FILE("file",         'f', &cfg.file,         file),
+		OPT_BYTE("secp",         'p', &cfg.secp,         secp),
+		OPT_SHRT("spsp",         's', &cfg.spsp,         spsp),
+		OPT_UINT("al",           't', &cfg.al,           al),
+		OPT_END()
+	};
+
+	err = fd = parse_and_open(argc, argv, desc, opts);
+	if (fd < 0)
+		goto ret;
+
+	auth_fd = open(cfg.file, O_RDONLY);
+	if (auth_fd < 0) {
+		fprintf(stderr, "Failed to open %s: %s\n",
+				cfg.file, strerror(errno));
+		err = -EINVAL;
+		goto close_fd;
+	}
+
+	err = fstat(auth_fd, &sb);
+	if (err < 0) {
+		perror("fstat");
+		goto close_sec_fd;
+	}
+
+	auth_size = sb.st_size;
+	if (posix_memalign(&auth_buf, getpagesize(), auth_size)) {
+		fprintf(stderr, "No memory for security size:%d\n", auth_size);
+		err = -ENOMEM;
+		goto close_sec_fd;
+	}
+
+	err = read(auth_fd, auth_buf, auth_size);
+	if (err < 0) {
+		err = -errno;
+		fprintf(stderr, "Failed to read data from security file"
+				" %s with %s\n", cfg.file, strerror(errno));
+		goto free;
+	}
+
+	err = nvme_auth_send(fd, cfg.secp, cfg.spsp, cfg.al,
+			     auth_size, auth_buf, &result);
+	if (err < 0)
+		perror("authentication-send");
+	else if (err != 0)
+		fprintf(stderr, "NVME Authentication Send Command Error:%d\n",
+			err);
+	else
+		printf("NVME Authentication Send Command Success:%d\n", result);
+
+free:
+	free(auth_buf);
+close_sec_fd:
+	close(auth_fd);
+close_fd:
+	close(fd);
+ret:
+	return nvme_status_to_errno(err, false);
+}
+
 static int dir_send(int argc, char **argv, struct command *cmd, struct plugin *plugin)
 {
 	const char *desc = "Set directive parameters of the "\
