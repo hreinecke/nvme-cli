@@ -23,6 +23,7 @@ struct fabrics_config {
 	const char *host_iface;
 	const char *hostnqn;
 	const char *hostid;
+	const char *dhchap_secret;
 	int  nr_io_queues;
 	int  nr_write_queues;
 	int  nr_poll_queues;
@@ -40,6 +41,7 @@ struct fabrics_config {
 	int  data_digest;
 	bool persistent;
 	bool matching_only;
+	bool authenticate;
 	const char *output_format;
 };
 extern struct fabrics_config fabrics_cfg;

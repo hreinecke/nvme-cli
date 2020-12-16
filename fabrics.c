@@ -67,6 +67,7 @@ const char *conarg_traddr = "traddr";
 const char *conarg_trsvcid = "trsvcid";
 const char *conarg_host_traddr = "host_traddr";
 const char *conarg_host_iface = "host_iface";
+const char *conarg_dhchap_secret = "dhchap_secret";
 
 struct fabrics_config fabrics_cfg = {
 	.ctrl_loss_tmo = -1,
@@ -81,6 +82,7 @@ struct connect_args {
 	char *trsvcid;
 	char *host_traddr;
 	char *host_iface;
+	char *dhchap_secret;
 	struct connect_args *next;
 	struct connect_args *tail;
 };
@@ -304,6 +306,7 @@ static bool ctrl_matches_connectargs(const char *name, struct connect_args *args
 	cargs.trsvcid = parse_conn_arg(addr, ' ', conarg_trsvcid);
 	cargs.host_traddr = parse_conn_arg(addr, ' ', conarg_host_traddr);
 	cargs.host_iface = parse_conn_arg(addr, ' ', conarg_host_iface);
+	cargs.dhchap_secret = parse_conn_arg(addr, ' ', conarg_dhchap_secret);
 
 	if (!strcmp(cargs.subsysnqn, NVME_DISC_SUBSYS_NAME)) {
 		char *kato_str = nvme_get_ctrl_attr(path, "kato"), *p;
@@ -337,7 +340,9 @@ static bool ctrl_matches_connectargs(const char *name, struct connect_args *args
 	    (!strcmp(cargs.host_traddr, args->host_traddr) ||
 	     !strcmp(args->host_traddr, "none")) &&
 	    (!strcmp(cargs.host_iface, args->host_iface) ||
-	     !strcmp(args->host_iface, "none")))
+	     !strcmp(args->host_iface, "none")) &&
+	    (!strcmp(cargs.dhchap_secret, args->dhchap_secret) ||
+	     !strcmp(cargs.dhchap_secret, "none")))
 		found = true;
 
 	free(cargs.subsysnqn);
@@ -346,6 +351,7 @@ static bool ctrl_matches_connectargs(const char *name, struct connect_args *args
 	free(cargs.trsvcid);
 	free(cargs.host_traddr);
 	free(cargs.host_iface);
+	free(cargs.dhchap_secret);
 	free(addr);
 	free(path);
 
@@ -402,6 +408,7 @@ static struct connect_args *extract_connect_args(char *argstr)
 	cargs->trsvcid = parse_conn_arg(argstr, ',', conarg_trsvcid);
 	cargs->host_traddr = parse_conn_arg(argstr, ',', conarg_host_traddr);
 	cargs->host_iface = parse_conn_arg(argstr, ',', conarg_host_iface);
+	cargs->dhchap_secret = parse_conn_arg(argstr, ',', conarg_dhchap_secret);
 	return cargs;
 }
 
@@ -413,6 +420,7 @@ static void destruct_connect_args(struct connect_args *cargs)
 	free(cargs->trsvcid);
 	free(cargs->host_traddr);
 	free(cargs->host_iface);
+	free(cargs->dhchap_secret);
 }
 
 static void free_connect_args(struct connect_args *cargs)
@@ -1212,6 +1220,13 @@ retry:
 		p+= len;
 	}
 
+	if (fabrics_cfg.dhchap_secret && strcmp(fabrics_cfg.dhchap_secret, "none")) {
+		len = sprintf(p, ",dhchap_secret=%s", fabrics_cfg.dhchap_secret);
+		if (len < 0)
+			return -EINVAL;
+		p += len;
+	}
+
 	if (fabrics_cfg.reconnect_delay) {
 		len = sprintf(p, ",reconnect_delay=%d", fabrics_cfg.reconnect_delay);
 		if (len < 0)
@@ -1268,6 +1283,13 @@ retry:
 
 	if (fabrics_cfg.data_digest) {
 		len = sprintf(p, ",data_digest");
+		if (len < 0)
+			return -EINVAL;
+		p += len;
+	}
+
+	if (fabrics_cfg.authenticate) {
+		len = sprintf(p, ",authenticate");
 		if (len < 0)
 			return -EINVAL;
 		p += len;
@@ -1352,6 +1374,7 @@ static bool cargs_match_found(struct nvmf_disc_rsp_page_entry *entry)
 	cargs.trsvcid = strdup(entry->trsvcid);
 	cargs.host_traddr = strdup(fabrics_cfg.host_traddr ?: "\0");
 	cargs.host_iface = strdup(fabrics_cfg.host_iface ?: "\0");
+	cargs.dhchap_secret = strdup(fabrics_cfg.dhchap_secret ?: "\0");
 
 	/* check if we have a match in the discovery recursion */
 	while (c) {
@@ -1360,7 +1383,8 @@ static bool cargs_match_found(struct nvmf_disc_rsp_page_entry *entry)
 		    !strcmp(cargs.traddr, c->traddr) &&
 		    !strcmp(cargs.trsvcid, c->trsvcid) &&
 		    !strcmp(cargs.host_traddr, c->host_traddr) &&
-		    !strcmp(cargs.host_iface, c->host_iface))
+		    !strcmp(cargs.host_iface, c->host_iface) &&
+		    !strcmp(cargs.dhchap_secret, c->dhchap_secret))
 			return true;
 		c = c->next;
 	}
@@ -1716,6 +1740,7 @@ int fabrics_connect(const char *desc, int argc, char **argv)
 		OPT_FLAG("hdr-digest",        'g', &fabrics_cfg.hdr_digest,        "enable transport protocol header digest (TCP transport)"),
 		OPT_FLAG("data-digest",       'G', &fabrics_cfg.data_digest,       "enable transport protocol data digest (TCP transport)"),
 		OPT_FMT("output-format",      'o', &fabrics_cfg.output_format,     "Output format: normal|json"),
+		OPT_FLAG("authenticate",      'A', &fabrics_cfg.authenticate,      "additionally authenticate controller (TCP transport)"),
 		OPT_END()
 	};
 
