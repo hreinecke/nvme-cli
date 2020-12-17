@@ -5,6 +5,8 @@ LIBUUID = $(shell $(LD) -o /dev/null -luuid >/dev/null 2>&1; echo $$?)
 LIBHUGETLBFS = $(shell $(LD) -o /dev/null -lhugetlbfs >/dev/null 2>&1; echo $$?)
 HAVE_SYSTEMD = $(shell pkg-config --exists libsystemd  --atleast-version=242; echo $$?)
 LIBJSONC = $(shell $(LD) -o /dev/null -ljson-c >/dev/null 2>&1; echo $$?)
+LIBZ = $(shell $(LD) -o /dev/null -lz >/dev/null 2>&1; echo $$?)
+LIBOPENSSL = $(shell $(LD) -o /dev/null -lssl >/dev/null 2>&1; echo $$?)
 NVME = nvme
 INSTALL ?= install
 DESTDIR =
@@ -29,6 +31,18 @@ ifeq ($(LIBHUGETLBFS),0)
 	override LDFLAGS += -lhugetlbfs
 	override CFLAGS += -DLIBHUGETLBFS
 	override LIB_DEPENDS += hugetlbfs
+endif
+
+ifeq ($(LIBZ),0)
+	override LDFLAGS += -lz
+	override CFLAGS += -DLIBZ
+	override LIB_DEPENDS += zlib
+endif
+
+ifeq ($(LIBOPENSSL),0)
+	override LDFLAGS += -lssl -lcrypto
+	override CFLAGS += -DOPENSSL
+	override LIB_DEPENDS += openssl
 endif
 
 INC=-Iutil
@@ -69,7 +83,7 @@ OBJS := nvme-print.o nvme-ioctl.o nvme-rpmb.o \
 	nvme-status.o nvme-filters.o nvme-topology.o
 
 UTIL_OBJS := util/argconfig.o util/suffix.o util/parser.o \
-	util/cleanup.o util/log.o
+	util/cleanup.o util/log.o util/base64.o
 ifneq ($(LIBJSONC), 0)
 override UTIL_OBJS += util/json.o
 endif
