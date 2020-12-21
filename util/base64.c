@@ -20,6 +20,7 @@
  */
 
 #include <stdlib.h>
+#include <string.h>
 
 static const char lookup_table[65] =
 	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -69,4 +70,51 @@ int base64_encode(const unsigned char *src, int len, char *dst)
 	}
 
 	return cp - dst;
+}
+
+/**
+ * base64_decode() - base64-decode some bytes
+ * @src: the base64-encoded string to decode
+ * @len: number of bytes to decode
+ * @dst: (output) the decoded bytes.
+ *
+ * Decodes the base64-encoded bytes @src according to RFC 4648.
+ *
+ * Return: number of decoded bytes
+ */
+int base64_decode(const char *src, int len, unsigned char *dst)
+{
+	int i, bits = 0, pad = 0;
+	u_int32_t ac = 0;
+	unsigned int dst_len = 0;
+
+	for (i = 0; i < len; i++) {
+		int c, p = -1;
+
+		if (src[i] == '=') {
+			pad++;
+			if (i + 1 < len && src[i + 1] == '=')
+				pad++;
+			break;
+		}
+		for (c = 0; c < strlen(lookup_table); c++) {
+			if (src[i] == lookup_table[c]) {
+				p = c;
+				break;
+			}
+		}
+		if (p < 0)
+			break;
+		ac = (ac << 6) | p;
+		bits += 6;
+		if (bits < 24)
+			continue;
+		while (bits) {
+			bits -= 8;
+			dst[dst_len++] = (ac >> bits) & 0xff;
+		}
+		ac = 0;
+	}
+	dst_len -= pad;
+	return dst_len;
 }
