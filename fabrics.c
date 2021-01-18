@@ -445,10 +445,15 @@ int nvmf_discover(const char *desc, int argc, char **argv, bool connect)
 	if (!device && !transport && !traddr)
 		ret = discover_from_conf_file(h, desc, connect, &cfg);
 	else {
-		nvme_ctrl_t c;
+		nvme_ctrl_t c = NULL;
 
-		c = nvme_create_ctrl(nqn, transport, traddr,
-				     host_traddr, host_iface, trsvcid);
+		if (device)
+			c = nvme_scan_ctrl(r, device);
+		if (!c) {
+			c = nvme_create_ctrl(nqn, transport, traddr,
+					     host_traddr, host_iface, trsvcid);
+			device = NULL;
+		}
 		if (!c) {
 			ret = ENOMEM;
 			goto out_free;
@@ -464,7 +469,7 @@ int nvmf_discover(const char *desc, int argc, char **argv, bool connect)
 
 		if (!ret) {
 			ret = nvmf_do_discover(c, &cfg, raw, connect,
-					    persistent, flags);
+					       persistent, flags);
 			if (!device && !persistent)
 				nvme_ctrl_disconnect(c);
 			nvme_free_ctrl(c);
