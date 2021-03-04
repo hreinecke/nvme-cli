@@ -17,6 +17,7 @@ SYSTEMDDIR ?= $(LIBDIR)/systemd
 UDEVDIR ?= $(SYSCONFDIR)/udev
 UDEVRULESDIR ?= $(UDEVDIR)/rules.d
 DRACUTDIR ?= $(LIBDIR)/dracut
+LIBNVMEDIR = libnvme/
 LIB_DEPENDS =
 
 ifeq ($(LIBUUID),0)
@@ -95,7 +96,10 @@ PLUGIN_OBJS :=					\
 	plugins/nvidia/nvidia-nvme.o        \
 	plugins/ymtc/ymtc-nvme.o
 
-nvme: nvme.c nvme.h $(OBJS) $(PLUGIN_OBJS) $(UTIL_OBJS) NVME-VERSION-FILE
+libnvme:
+	$(MAKE) -C $(LIBNVMEDIR)
+
+nvme: nvme.c nvme.h libnvme $(OBJS) $(PLUGIN_OBJS) $(UTIL_OBJS) NVME-VERSION-FILE
 	$(QUIET_CC)$(CC) $(CPPFLAGS) $(CFLAGS) $(INC) $< -o $(NVME) $(OBJS) $(PLUGIN_OBJS) $(UTIL_OBJS) $(LDFLAGS)
 
 verify-no-dep: nvme.c nvme.h $(OBJS) $(UTIL_OBJS) NVME-VERSION-FILE
@@ -249,4 +253,4 @@ rpm: dist
 	-ta nvme-$(NVME_VERSION).tar.gz
 
 .PHONY: default doc all clean clobber install-man install-bin install
-.PHONY: dist pkg dist-orig deb deb-light rpm FORCE test
+.PHONY: dist pkg dist-orig deb deb-light rpm FORCE test libnvme
