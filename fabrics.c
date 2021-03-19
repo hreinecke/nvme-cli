@@ -1250,7 +1250,8 @@ retry:
 	return ret;
 }
 
-static bool cargs_match_found(struct nvmf_disc_rsp_page_entry *entry)
+static bool cargs_match_found(struct nvmf_disc_rsp_page_entry *entry,
+			      char *host_traddr)
 {
 	struct connect_args cargs = {};
 	struct connect_args *c = tracked_ctrls;
@@ -1259,7 +1260,7 @@ static bool cargs_match_found(struct nvmf_disc_rsp_page_entry *entry)
 	cargs.transport = strdup(trtype_str(entry->trtype));
 	cargs.subsysnqn = strdup(entry->subnqn);
 	cargs.trsvcid = strdup(entry->trsvcid);
-	cargs.host_traddr = strdup(cfg.host_traddr ?: "\0");
+	cargs.host_traddr = strdup(host_traddr ?: "\0");
 
 	/* check if we have a match in the discovery recursion */
 	while (c) {
@@ -1280,7 +1281,7 @@ static bool should_connect(struct nvmf_disc_rsp_page_entry *entry)
 {
 	int len;
 
-	if (cargs_match_found(entry))
+	if (cargs_match_found(entry, cfg.host_traddr))
 		return false;
 
 	if (!cfg.matching_only || !cfg.traddr)
