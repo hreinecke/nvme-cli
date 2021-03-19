@@ -416,7 +416,7 @@ static void track_ctrl(char *argstr)
 	tracked_ctrls->tail = cargs;
 }
 
-static int add_ctrl(const char *argstr)
+static int add_ctrl(const char *argstr, bool quiet)
 {
 	substring_t args[MAX_OPT_ARGS];
 	char buf[BUF_SIZE], *options, *p;
@@ -432,7 +432,7 @@ static int add_ctrl(const char *argstr)
 
 	ret = write(fd, argstr, len);
 	if (ret != len) {
-		if (errno != EALREADY || !cfg.quiet)
+		if (errno != EALREADY || !quiet)
 			fprintf(stderr, "Failed to write to %s: %s\n",
 				 PATH_NVME_FABRICS, strerror(errno));
 		ret = -errno;
@@ -1240,7 +1240,7 @@ retry:
 			flags = NORMAL;
 		ret = do_discover(argstr, true, flags);
 	} else
-		ret = add_ctrl(argstr);
+		ret = add_ctrl(argstr, cfg.quiet);
 	if (ret == -EINVAL && e->treq & NVMF_TREQ_DISABLE_SQFLOW) {
 		/* disable_sqflow param might not be supported, try without it */
 		disable_sqflow = false;
@@ -1371,7 +1371,7 @@ static int do_discover(char *argstr, bool connect, enum nvme_print_flags flags)
 	}
 
 	if (!cfg.device) {
-		instance = add_ctrl(argstr);
+		instance = add_ctrl(argstr, cfg.quiet);
 	} else {
 		instance = ctrl_instance(cfg.device);
 		nvmf_get_host_identifiers(instance);
@@ -1629,7 +1629,7 @@ int fabrics_connect(const char *desc, int argc, char **argv)
 		goto out;
 	}
 
-	instance = add_ctrl(argstr);
+	instance = add_ctrl(argstr, cfg.quiet);
 	if (instance < 0)
 		ret = instance;
 
