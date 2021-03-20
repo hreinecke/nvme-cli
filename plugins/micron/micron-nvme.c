@@ -650,7 +650,7 @@ static int micron_temp_stats(int argc, char **argv, struct command *cmd, struct 
     };
     bool is_json = false;
     struct json_object *root;
-    struct json_array *logPages;
+    struct json_object *logPages;
     int fd;
 
     OPT_ARGS(opts) = {
@@ -837,7 +837,7 @@ static int micron_pcie_stats(int argc, char **argv, struct command *cmd, struct 
     if (is_json) {
 
         struct json_object *root = json_create_object();
-        struct json_array  *pcieErrors = json_create_array();
+        struct json_object *pcieErrors = json_create_array();
         struct json_object *stats = json_create_object();
 
         json_object_add_value_array(root, "PCIE Stats", pcieErrors);
@@ -1046,7 +1046,7 @@ static void print_nand_stats_fb(__u8 *buf, __u8 *buf2, __u8 nsze, bool is_json)
         { "Log Page Version", 2}
     };
     struct json_object *root;
-    struct json_array *logPages;
+    struct json_object *logPages;
     struct json_object *stats;
     int field;
     int offset = 0;
@@ -1132,7 +1132,7 @@ static void print_nand_stats_d0(__u8 *buf, __u8 oacs, bool is_json)
     if (is_json) {
         struct json_object *root = json_create_object();
         struct json_object *stats = json_create_object();
-        struct json_array  *logPages = json_create_array();
+        struct json_object *logPages = json_create_array();
 
         json_object_add_value_array(root,
                                     "Extended Smart Log Page : 0xD0",

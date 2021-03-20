@@ -193,7 +193,7 @@ static void netapp_get_ontap_labels(char *vsname, char *nspath,
 			vol_name, "/", ns_name);
 }
 
-static void netapp_smdevice_json(struct json_array *devices, char *devname,
+static void netapp_smdevice_json(struct json_object *devices, char *devname,
 		char *arrayname, char *volname, int nsid, char *nguid,
 		char *ctrl, char *astate, char *size, long long lba,
 		long long nsze)
@@ -215,7 +215,7 @@ static void netapp_smdevice_json(struct json_array *devices, char *devname,
 	json_array_add_value_object(devices, device_attrs);
 }
 
-static void netapp_ontapdevice_json(struct json_array *devices, char *devname,
+static void netapp_ontapdevice_json(struct json_object *devices, char *devname,
 		char *vsname, char *nspath, int nsid, char *uuid,
 		char *size, long long lba, long long nsze)
 {
@@ -237,7 +237,7 @@ static void netapp_ontapdevice_json(struct json_array *devices, char *devname,
 static void netapp_smdevices_print(struct smdevice_info *devices, int count, int format)
 {
 	struct json_object *root = NULL;
-	struct json_array *json_devices = NULL;
+	struct json_object *json_devices = NULL;
 	int i, slta;
 	char array_label[ARRAY_LABEL_LEN / 2 + 1];
 	char volume_label[VOLUME_LABEL_LEN / 2 + 1];
@@ -300,7 +300,7 @@ static void netapp_ontapdevices_print(struct ontapdevice_info *devices,
 		int count, int format)
 {
 	struct json_object *root = NULL;
-	struct json_array *json_devices = NULL;
+	struct json_object *json_devices = NULL;
 	char vsname[ONTAP_LABEL_LEN] = " ";
 	char nspath[ONTAP_NS_PATHLEN] = " ";
 	long long lba;

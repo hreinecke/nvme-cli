@@ -5764,7 +5764,7 @@ static void print_discovery_log(struct nvmf_discovery_log *log, int numrec)
 static void json_discovery_log(struct nvmf_discovery_log *log, int numrec)
 {
 	struct json_object *root;
-	struct json_array *entries;
+	struct json_object *entries;
 	int i;
 
 	root = json_create_object();
