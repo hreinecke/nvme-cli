@@ -63,7 +63,7 @@ const char *conarg_traddr = "traddr";
 const char *conarg_trsvcid = "trsvcid";
 const char *conarg_host_traddr = "host_traddr";
 
-static struct config {
+struct config {
 	char *nqn;
 	char *transport;
 	char *traddr;
@@ -89,9 +89,6 @@ static struct config {
 	bool quiet;
 	bool matching_only;
 	char *output_format;
-} cfg = {
-	.ctrl_loss_tmo = NVMF_DEF_CTRL_LOSS_TMO,
-	.output_format = "normal",
 };
 
 struct connect_args {
@@ -225,7 +222,8 @@ static const char *cms_str(__u8 cm)
 	return arg_str(cms, ARRAY_SIZE(cms), cm);
 }
 
-static int do_discover(char *argstr, bool connect, enum nvme_print_flags flags);
+static int do_discover(struct config *, char *argstr,
+		       bool connect, enum nvme_print_flags flags);
 
 /*
  * parse strings with connect arguments to find a particular field.
@@ -835,14 +833,14 @@ char *hostnqn_read(void)
 	return NULL;
 }
 
-static int nvmf_hostnqn_file(void)
+static int nvmf_hostnqn_file(struct config *cfg)
 {
-	cfg.hostnqn = hostnqn_read();
+	cfg->hostnqn = hostnqn_read();
 
-	return cfg.hostnqn != NULL;
+	return cfg->hostnqn != NULL;
 }
 
-static int nvmf_hostid_file(void)
+static int nvmf_hostid_file(struct config *cfg)
 {
 	FILE *f;
 	char hostid[NVMF_HOSTID_SIZE + 1];
@@ -855,8 +853,8 @@ static int nvmf_hostid_file(void)
 	if (fgets(hostid, sizeof(hostid), f) == NULL)
 		goto out;
 
-	cfg.hostid = strdup(hostid);
-	if (!cfg.hostid)
+	cfg->hostid = strdup(hostid);
+	if (!cfg->hostid)
 		goto out;
 
 	ret = true;
@@ -914,62 +912,65 @@ add_argument(char **argstr, int *max_len, char *arg_str, char *arg)
 	return 0;
 }
 
-static int build_options(char *argstr, int max_len, bool discover)
+static int build_options(struct config *cfg, char *argstr,
+			 int max_len, bool discover)
 {
 	int len;
 
-	if (!cfg.transport) {
+	if (!cfg->transport) {
 		fprintf(stderr, "need a transport (-t) argument\n");
 		return -EINVAL;
 	}
 
-	if (strncmp(cfg.transport, "loop", 4)) {
-		if (!cfg.traddr) {
+	if (strncmp(cfg->transport, "loop", 4)) {
+		if (!cfg->traddr) {
 			fprintf(stderr, "need a address (-a) argument\n");
 			return -EINVAL;
 		}
 	}
 
 	/* always specify nqn as first arg - this will init the string */
-	len = snprintf(argstr, max_len, "nqn=%s", cfg.nqn);
+	len = snprintf(argstr, max_len, "nqn=%s", cfg->nqn);
 	if (len < 0)
 		return -EINVAL;
 	argstr += len;
 	max_len -= len;
 
-	if (add_argument(&argstr, &max_len, "transport", cfg.transport) ||
-	    add_argument(&argstr, &max_len, "traddr", cfg.traddr) ||
-	    add_argument(&argstr, &max_len, "host_traddr", cfg.host_traddr) ||
-	    add_argument(&argstr, &max_len, "trsvcid", cfg.trsvcid) ||
-	    ((cfg.hostnqn || nvmf_hostnqn_file()) &&
-		    add_argument(&argstr, &max_len, "hostnqn", cfg.hostnqn)) ||
-	    ((cfg.hostid || nvmf_hostid_file()) &&
-		    add_argument(&argstr, &max_len, "hostid", cfg.hostid)) ||
+	if (add_argument(&argstr, &max_len, "transport", cfg->transport) ||
+	    add_argument(&argstr, &max_len, "traddr", cfg->traddr) ||
+	    add_argument(&argstr, &max_len, "host_traddr", cfg->host_traddr) ||
+	    add_argument(&argstr, &max_len, "trsvcid", cfg->trsvcid) ||
+	    ((cfg->hostnqn || nvmf_hostnqn_file(cfg)) &&
+		    add_argument(&argstr, &max_len, "hostnqn", cfg->hostnqn)) ||
+	    ((cfg->hostid || nvmf_hostid_file(cfg)) &&
+		    add_argument(&argstr, &max_len, "hostid", cfg->hostid)) ||
 	    (!discover &&
 	      add_int_argument(&argstr, &max_len, "nr_io_queues",
-				cfg.nr_io_queues, false)) ||
+				cfg->nr_io_queues, false)) ||
 	    add_int_argument(&argstr, &max_len, "nr_write_queues",
-				cfg.nr_write_queues, false) ||
+				cfg->nr_write_queues, false) ||
 	    add_int_argument(&argstr, &max_len, "nr_poll_queues",
-				cfg.nr_poll_queues, false) ||
+				cfg->nr_poll_queues, false) ||
 	    (!discover &&
 	      add_int_argument(&argstr, &max_len, "queue_size",
-				cfg.queue_size, false)) ||
+				cfg->queue_size, false)) ||
 	    add_int_argument(&argstr, &max_len, "keep_alive_tmo",
-				cfg.keep_alive_tmo, false) ||
+				cfg->keep_alive_tmo, false) ||
 	    add_int_argument(&argstr, &max_len, "reconnect_delay",
-				cfg.reconnect_delay, false) ||
-	    (strncmp(cfg.transport, "loop", 4) &&
+				cfg->reconnect_delay, false) ||
+	    (strncmp(cfg->transport, "loop", 4) &&
 	     add_int_argument(&argstr, &max_len, "ctrl_loss_tmo",
-				cfg.ctrl_loss_tmo, true)) ||
+				cfg->ctrl_loss_tmo, true)) ||
 	    add_int_argument(&argstr, &max_len, "tos",
-				cfg.tos, true) ||
+				cfg->tos, true) ||
 	    add_bool_argument(&argstr, &max_len, "duplicate_connect",
-				cfg.duplicate_connect) ||
+				cfg->duplicate_connect) ||
 	    add_bool_argument(&argstr, &max_len, "disable_sqflow",
-				cfg.disable_sqflow) ||
-	    add_bool_argument(&argstr, &max_len, "hdr_digest", cfg.hdr_digest) ||
-	    add_bool_argument(&argstr, &max_len, "data_digest", cfg.data_digest))
+				cfg->disable_sqflow) ||
+	    add_bool_argument(&argstr, &max_len, "hdr_digest",
+				cfg->hdr_digest) ||
+	    add_bool_argument(&argstr, &max_len, "data_digest",
+				cfg->data_digest))
 		return -EINVAL;
 
 	return 0;
@@ -1053,7 +1054,7 @@ free_addrinfo:
 	return ret;
 }
 
-static int connect_ctrl(struct nvmf_disc_rsp_page_entry *e)
+static int connect_ctrl(struct config *cfg, struct nvmf_disc_rsp_page_entry *e)
 {
 	char argstr[BUF_SIZE], *p;
 	const char *transport;
@@ -1080,78 +1081,78 @@ retry:
 		return -EINVAL;
 	p += len;
 
-	if (cfg.hostnqn && strcmp(cfg.hostnqn, "none")) {
-		len = sprintf(p, ",hostnqn=%s", cfg.hostnqn);
+	if (cfg->hostnqn && strcmp(cfg->hostnqn, "none")) {
+		len = sprintf(p, ",hostnqn=%s", cfg->hostnqn);
 		if (len < 0)
 			return -EINVAL;
 		p += len;
 	}
 
-	if (cfg.hostid && strcmp(cfg.hostid, "none")) {
-		len = sprintf(p, ",hostid=%s", cfg.hostid);
+	if (cfg->hostid && strcmp(cfg->hostid, "none")) {
+		len = sprintf(p, ",hostid=%s", cfg->hostid);
 		if (len < 0)
 			return -EINVAL;
 		p += len;
 	}
 
-	if (cfg.queue_size && !discover) {
-		len = sprintf(p, ",queue_size=%d", cfg.queue_size);
+	if (cfg->queue_size && !discover) {
+		len = sprintf(p, ",queue_size=%d", cfg->queue_size);
 		if (len < 0)
 			return -EINVAL;
 		p += len;
 	}
 
-	if (cfg.nr_io_queues && !discover) {
-		len = sprintf(p, ",nr_io_queues=%d", cfg.nr_io_queues);
+	if (cfg->nr_io_queues && !discover) {
+		len = sprintf(p, ",nr_io_queues=%d", cfg->nr_io_queues);
 		if (len < 0)
 			return -EINVAL;
 		p += len;
 	}
 
-	if (cfg.nr_write_queues) {
-		len = sprintf(p, ",nr_write_queues=%d", cfg.nr_write_queues);
+	if (cfg->nr_write_queues) {
+		len = sprintf(p, ",nr_write_queues=%d", cfg->nr_write_queues);
 		if (len < 0)
 			return -EINVAL;
 		p += len;
 	}
 
-	if (cfg.nr_poll_queues) {
-		len = sprintf(p, ",nr_poll_queues=%d", cfg.nr_poll_queues);
+	if (cfg->nr_poll_queues) {
+		len = sprintf(p, ",nr_poll_queues=%d", cfg->nr_poll_queues);
 		if (len < 0)
 			return -EINVAL;
 		p += len;
 	}
 
-	if (cfg.host_traddr && strcmp(cfg.host_traddr, "none")) {
-		len = sprintf(p, ",host_traddr=%s", cfg.host_traddr);
+	if (cfg->host_traddr && strcmp(cfg->host_traddr, "none")) {
+		len = sprintf(p, ",host_traddr=%s", cfg->host_traddr);
 		if (len < 0)
 			return -EINVAL;
 		p+= len;
 	}
 
-	if (cfg.reconnect_delay) {
-		len = sprintf(p, ",reconnect_delay=%d", cfg.reconnect_delay);
+	if (cfg->reconnect_delay) {
+		len = sprintf(p, ",reconnect_delay=%d", cfg->reconnect_delay);
 		if (len < 0)
 			return -EINVAL;
 		p += len;
 	}
 
-	if ((e->trtype != NVMF_TRTYPE_LOOP) && (cfg.ctrl_loss_tmo >= -1)) {
-		len = sprintf(p, ",ctrl_loss_tmo=%d", cfg.ctrl_loss_tmo);
+	if ((e->trtype != NVMF_TRTYPE_LOOP) && (cfg->ctrl_loss_tmo >= -1)) {
+		len = sprintf(p, ",ctrl_loss_tmo=%d", cfg->ctrl_loss_tmo);
 		if (len < 0)
 			return -EINVAL;
 		p += len;
 	}
 
-	if (cfg.tos != -1) {
-		len = sprintf(p, ",tos=%d", cfg.tos);
+	if (cfg->tos != -1) {
+		len = sprintf(p, ",tos=%d", cfg->tos);
 		if (len < 0)
 			return -EINVAL;
 		p += len;
 	}
 
-	if (cfg.keep_alive_tmo) {
-		len = sprintf(p, ",keep_alive_tmo=%d", cfg.keep_alive_tmo);
+	if (cfg->keep_alive_tmo) {
+		len = sprintf(p, ",keep_alive_tmo=%d", cfg->keep_alive_tmo);
 		if (len < 0)
 			return -EINVAL;
 		p += len;
@@ -1169,14 +1170,14 @@ retry:
 		return -EINVAL;
 	p += len;
 
-	if (cfg.hdr_digest) {
+	if (cfg->hdr_digest) {
 		len = sprintf(p, ",hdr_digest");
 		if (len < 0)
 			return -EINVAL;
 		p += len;
 	}
 
-	if (cfg.data_digest) {
+	if (cfg->data_digest) {
 		len = sprintf(p, ",data_digest");
 		if (len < 0)
 			return -EINVAL;
@@ -1236,12 +1237,12 @@ retry:
 	if (discover) {
 		enum nvme_print_flags flags;
 
-		flags = validate_output_format(cfg.output_format);
+		flags = validate_output_format(cfg->output_format);
 		if (flags < 0)
 			flags = NORMAL;
-		ret = do_discover(argstr, true, flags);
+		ret = do_discover(cfg, argstr, true, flags);
 	} else
-		ret = add_ctrl(argstr, cfg.quiet);
+		ret = add_ctrl(argstr, cfg->quiet);
 	if (ret == -EINVAL && e->treq & NVMF_TREQ_DISABLE_SQFLOW) {
 		/* disable_sqflow param might not be supported, try without it */
 		disable_sqflow = false;
@@ -1277,31 +1278,33 @@ static bool cargs_match_found(struct nvmf_disc_rsp_page_entry *entry,
 	return find_ctrl_with_connectargs(&cargs) != NULL;
 }
 
-static bool should_connect(struct nvmf_disc_rsp_page_entry *entry)
+static bool should_connect(struct config *cfg,
+			   struct nvmf_disc_rsp_page_entry *entry)
 {
 	int len;
 
-	if (cargs_match_found(entry, cfg.host_traddr))
+	if (cargs_match_found(entry, cfg->host_traddr))
 		return false;
 
-	if (!cfg.matching_only || !cfg.traddr)
+	if (!cfg->matching_only || !cfg->traddr)
 		return true;
 
 	len = space_strip_len(NVMF_TRADDR_SIZE, entry->traddr);
-	return !strncmp(cfg.traddr, entry->traddr, len);
+	return !strncmp(cfg->traddr, entry->traddr, len);
 }
 
-static int connect_ctrls(struct nvmf_disc_rsp_page_hdr *log, int numrec)
+static int connect_ctrls(struct config *cfg,
+			 struct nvmf_disc_rsp_page_hdr *log, int numrec)
 {
 	int i;
 	int instance;
 	int ret = 0;
 
 	for (i = 0; i < numrec; i++) {
-		if (!should_connect(&log->entries[i]))
+		if (!should_connect(cfg, &log->entries[i]))
 			continue;
 
-		instance = connect_ctrl(&log->entries[i]);
+		instance = connect_ctrl(cfg, &log->entries[i]);
 
 		/* clean success */
 		if (instance >= 0)
@@ -1311,7 +1314,7 @@ static int connect_ctrls(struct nvmf_disc_rsp_page_hdr *log, int numrec)
 		if (instance == -EALREADY) {
 			const char *traddr = log->entries[i].traddr;
 
-			if (!cfg.quiet)
+			if (!cfg->quiet)
 				fprintf(stderr,
 					"traddr=%.*s is already connected\n",
 					space_strip_len(NVMF_TRADDR_SIZE,
@@ -1331,24 +1334,25 @@ static int connect_ctrls(struct nvmf_disc_rsp_page_hdr *log, int numrec)
 	return ret;
 }
 
-static void nvmf_get_host_identifiers(int ctrl_instance)
+static void nvmf_get_host_identifiers(struct config *cfg, int ctrl_instance)
 {
 	char *path;
 
 	if (asprintf(&path, "%s/nvme%d", SYS_NVME, ctrl_instance) < 0)
 		return;
-	cfg.hostnqn = nvme_get_ctrl_attr(path, "hostnqn");
-	cfg.hostid = nvme_get_ctrl_attr(path, "hostid");
+	cfg->hostnqn = nvme_get_ctrl_attr(path, "hostnqn");
+	cfg->hostid = nvme_get_ctrl_attr(path, "hostid");
 }
 
-static int do_discover(char *argstr, bool connect, enum nvme_print_flags flags)
+static int do_discover(struct config *cfg, char *argstr,
+		bool connect, enum nvme_print_flags flags)
 {
 	struct nvmf_disc_rsp_page_hdr *log = NULL;
 	char *dev_name;
 	int instance, numrec = 0, ret, err;
 	int status = 0;
 
-	if (cfg.device) {
+	if (cfg->device) {
 		struct connect_args *cargs;
 
 		cargs = extract_connect_args(argstr);
@@ -1356,27 +1360,27 @@ static int do_discover(char *argstr, bool connect, enum nvme_print_flags flags)
 			return -ENOMEM;
 
 		/*
-		 * if the cfg.device passed in matches the connect args
-		 *    cfg.device is left as-is
+		 * if the cfg->device passed in matches the connect args
+		 *    cfg->device is left as-is
 		 * else if there exists a controller that matches the
 		 *         connect args
-		 *    cfg.device is the matching ctrl name
+		 *    cfg->device is the matching ctrl name
 		 * else if no ctrl matches the connect args
-		 *    cfg.device is set to null. This will attempt to
+		 *    cfg->device is set to null. This will attempt to
 		 *    create a new ctrl.
 		 * endif
 		 */
-		if (!ctrl_matches_connectargs(cfg.device, cargs))
-			cfg.device = find_ctrl_with_connectargs(cargs);
+		if (!ctrl_matches_connectargs(cfg->device, cargs))
+			cfg->device = find_ctrl_with_connectargs(cargs);
 
 		free_connect_args(cargs);
 	}
 
-	if (!cfg.device) {
-		instance = add_ctrl(argstr, cfg.quiet);
+	if (!cfg->device) {
+		instance = add_ctrl(argstr, cfg->quiet);
 	} else {
-		instance = ctrl_instance(cfg.device);
-		nvmf_get_host_identifiers(instance);
+		instance = ctrl_instance(cfg->device);
+		nvmf_get_host_identifiers(cfg, instance);
 	}
 	if (instance < 0)
 		return instance;
@@ -1385,9 +1389,9 @@ static int do_discover(char *argstr, bool connect, enum nvme_print_flags flags)
 		return -errno;
 	ret = nvmf_get_log_page_discovery(dev_name, &log, &numrec, &status);
 	free(dev_name);
-	if (cfg.persistent)
+	if (cfg->persistent)
 		printf("Persistent device: nvme%d\n", instance);
-	if (!cfg.device && !cfg.persistent) {
+	if (!cfg->device && !cfg->persistent) {
 		err = remove_ctrl(instance);
 		if (err)
 			return err;
@@ -1396,9 +1400,9 @@ static int do_discover(char *argstr, bool connect, enum nvme_print_flags flags)
 	switch (ret) {
 	case DISC_OK:
 		if (connect)
-			ret = connect_ctrls(log, numrec);
-		else if (cfg.raw || flags == BINARY)
-			save_discovery_log(log, numrec, cfg.raw);
+			ret = connect_ctrls(cfg, log, numrec);
+		else if (cfg->raw || flags == BINARY)
+			save_discovery_log(log, numrec, cfg->raw);
 		else if (flags == JSON)
 			json_discovery_log(log, numrec);
 		else
@@ -1434,7 +1438,8 @@ static int do_discover(char *argstr, bool connect, enum nvme_print_flags flags)
 	return ret;
 }
 
-static int discover_from_conf_file(const char *desc, char *argstr,
+static int discover_from_conf_file(struct config *cfg,
+		const char *desc, char *argstr,
 		const struct argconfig_commandline_options *opts, bool connect)
 {
 	FILE *f;
@@ -1478,27 +1483,27 @@ static int discover_from_conf_file(const char *desc, char *argstr,
 		if (err)
 			goto free_and_continue;
 
-		err = flags = validate_output_format(cfg.output_format);
+		err = flags = validate_output_format(cfg->output_format);
 		if (err < 0)
 			goto free_and_continue;
-		set_discovery_kato(&cfg);
+		set_discovery_kato(cfg);
 
-		if (traddr_is_hostname(&cfg)) {
-			ret = hostname2traddr(&cfg);
+		if (traddr_is_hostname(cfg)) {
+			ret = hostname2traddr(cfg);
 			if (ret)
 				goto out;
 		}
 
-		if (!cfg.trsvcid)
-			discovery_trsvcid(&cfg);
+		if (!cfg->trsvcid)
+			discovery_trsvcid(cfg);
 
-		err = build_options(argstr, BUF_SIZE, true);
+		err = build_options(cfg, argstr, BUF_SIZE, true);
 		if (err) {
 			ret = err;
 			goto free_and_continue;
 		}
 
-		err = do_discover(argstr, connect, flags);
+		err = do_discover(cfg, argstr, connect, flags);
 		if (err)
 			ret = err;
 
@@ -1517,7 +1522,12 @@ int fabrics_discover(const char *desc, int argc, char **argv, bool connect)
 	char argstr[BUF_SIZE];
 	int ret;
 	enum nvme_print_flags flags;
-
+	struct config cfg = {
+		.ctrl_loss_tmo = NVMF_DEF_CTRL_LOSS_TMO,
+		.output_format = "normal",
+		.tos = -1,
+		.nqn = NVME_DISC_SUBSYS_NAME,
+	};
 	OPT_ARGS(opts) = {
 		OPT_LIST("transport",      't', &cfg.transport,       "transport type"),
 		OPT_LIST("traddr",         'a', &cfg.traddr,          "transport address"),
@@ -1544,7 +1554,6 @@ int fabrics_discover(const char *desc, int argc, char **argv, bool connect)
 		OPT_END()
 	};
 
-	cfg.tos = -1;
 	ret = argconfig_parse(argc, argv, desc, opts);
 	if (ret)
 		goto out;
@@ -1555,10 +1564,8 @@ int fabrics_discover(const char *desc, int argc, char **argv, bool connect)
 	if (cfg.device && !strcmp(cfg.device, "none"))
 		cfg.device = NULL;
 
-	cfg.nqn = NVME_DISC_SUBSYS_NAME;
-
 	if (!cfg.transport && !cfg.traddr) {
-		ret = discover_from_conf_file(desc, argstr, opts, connect);
+		ret = discover_from_conf_file(&cfg, desc, argstr, opts, connect);
 	} else {
 		set_discovery_kato(&cfg);
 
@@ -1571,11 +1578,11 @@ int fabrics_discover(const char *desc, int argc, char **argv, bool connect)
 		if (!cfg.trsvcid)
 			discovery_trsvcid(&cfg);
 
-		ret = build_options(argstr, BUF_SIZE, true);
+		ret = build_options(&cfg, argstr, BUF_SIZE, true);
 		if (ret)
 			goto out;
 
-		ret = do_discover(argstr, connect, flags);
+		ret = do_discover(&cfg, argstr, connect, flags);
 	}
 
 out:
@@ -1586,6 +1593,11 @@ int fabrics_connect(const char *desc, int argc, char **argv)
 {
 	char argstr[BUF_SIZE];
 	int instance, ret;
+	struct config cfg = {
+		.ctrl_loss_tmo = NVMF_DEF_CTRL_LOSS_TMO,
+		.output_format = "normal",
+		.tos = -1,
+	};
 
 	OPT_ARGS(opts) = {
 		OPT_LIST("transport",         't', &cfg.transport,         "transport type"),
@@ -1610,7 +1622,6 @@ int fabrics_connect(const char *desc, int argc, char **argv)
 		OPT_END()
 	};
 
-	cfg.tos = -1;
 	ret = argconfig_parse(argc, argv, desc, opts);
 	if (ret)
 		goto out;
@@ -1621,7 +1632,7 @@ int fabrics_connect(const char *desc, int argc, char **argv)
 			goto out;
 	}
 
-	ret = build_options(argstr, BUF_SIZE, false);
+	ret = build_options(&cfg, argstr, BUF_SIZE, false);
 	if (ret)
 		goto out;
 
@@ -1726,6 +1737,10 @@ int fabrics_disconnect(const char *desc, int argc, char **argv)
 	const char *nqn = "nqn name";
 	const char *device = "nvme device";
 	int ret;
+	struct config cfg = {
+		.ctrl_loss_tmo = NVMF_DEF_CTRL_LOSS_TMO,
+		.output_format = "normal",
+	};
 
 	OPT_ARGS(opts) = {
 		OPT_LIST("nqn",    'n', &cfg.nqn,    nqn),
