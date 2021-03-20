@@ -4,6 +4,7 @@ override CPPFLAGS += -D_GNU_SOURCE -D__CHECK_ENDIAN__ -I.
 LIBUUID = $(shell $(LD) -o /dev/null -luuid >/dev/null 2>&1; echo $$?)
 LIBHUGETLBFS = $(shell $(LD) -o /dev/null -lhugetlbfs >/dev/null 2>&1; echo $$?)
 HAVE_SYSTEMD = $(shell pkg-config --exists libsystemd  --atleast-version=242; echo $$?)
+LIBJSONC = $(shell $(LD) -o /dev/null -ljson-c >/dev/null 2>&1; echo $$?)
 NVME = nvme
 INSTALL ?= install
 DESTDIR =
@@ -41,6 +42,11 @@ ifeq ($(HAVE_SYSTEMD),0)
 	override CFLAGS += -DHAVE_SYSTEMD
 endif
 
+ifeq ($(LIBJSONC), 0)
+	override LDFLAGS += -ljson-c
+	override CFLAGS += -DLIBJSONC
+endif
+
 RPMBUILD = rpmbuild
 TAR = tar
 RM = rm -f
@@ -64,7 +70,10 @@ override CFLAGS += -DNVME_VERSION='"$(NVME_VERSION)"'
 NVME_DPKG_VERSION=1~`lsb_release -sc`
 
 OBJS := nvme-print.o nvme-models.o plugin.o nvme-rpmb.o
-UTIL_OBJS := util/argconfig.o util/suffix.o util/json.o util/parser.o
+UTIL_OBJS := util/argconfig.o util/suffix.o util/parser.o
+ifneq ($(LIBJSONC), 0)
+override UTIL_OBJS += util/json.o
+endif
 
 PLUGIN_OBJS :=					\
 	plugins/intel/intel-nvme.o		\
