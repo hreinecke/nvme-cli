@@ -311,6 +311,7 @@ static int ctrl_instance(char *device)
 static bool ctrl_matches_connectargs(char *name, struct port_config *port)
 {
 	char *path, *addr, *traddr, *trsvcid, *host_traddr;
+	char *subsysnqn, *transport;
 	int ret;
 
 	ret = asprintf(&path, "%s/%s", SYS_NVME, name);
@@ -323,15 +324,19 @@ static bool ctrl_matches_connectargs(char *name, struct port_config *port)
 		return false;
 	}
 
-	if (strcmp(port->subsys->nqn,
-		   nvme_get_ctrl_attr(path, "subsysnqn")))
+	subsysnqn = nvme_get_ctrl_attr(path, "subsysnqn");
+	transport = nvme_get_ctrl_attr(path, "transport");
+	if (strcmp(port->subsys->nqn, subsysnqn))
 		return false;
-	if (strcmp(port->transport,
-		   nvme_get_ctrl_attr(path, "transport")))
+	if (strcmp(port->transport, transport))
 		return false;
 	traddr = parse_conn_arg(addr, ' ', conarg_traddr);
 	trsvcid = parse_conn_arg(addr, ' ', conarg_trsvcid);
 	host_traddr = parse_conn_arg(addr, ' ', conarg_host_traddr);
+
+	/* Loop doesn't require a transport address */
+	if (!strcmp(transport, "loop"))
+		return true;
 
 	if ((traddr && !strcmp(traddr, port->traddr)) &&
 	    (trsvcid && !strcmp(trsvcid, port->trsvcid)) &&
@@ -395,8 +400,8 @@ static int add_ctrl(const char *argstr, bool quiet)
 	ret = write(fd, argstr, len);
 	if (ret != len) {
 		if (errno != EALREADY || !quiet)
-			fprintf(stderr, "Failed to write to %s: %s\n",
-				 PATH_NVME_FABRICS, strerror(errno));
+			fprintf(stderr, "Failed to write %s to %s: %s\n",
+				argstr, PATH_NVME_FABRICS, strerror(errno));
 		ret = -errno;
 		goto out_close;
 	}
@@ -839,6 +844,7 @@ static void json_parse_port(struct subsys_config *subsys,
 	struct port_config *port;
 	const char *transport, *traddr = NULL;
 	const char *host_traddr = NULL, *trsvcid = NULL;
+	char *device;
 
 	attr_obj = json_object_object_get(port_obj, "transport");
 	if (!attr_obj)
@@ -856,8 +862,8 @@ static void json_parse_port(struct subsys_config *subsys,
 	port = lookup_port(subsys, transport, traddr, host_traddr, trsvcid);
 	if (port)
 		json_update_attributes(port, port_obj);
-	port->device = find_ctrl_with_connectargs(port);
-	if (port->device)
+	device = find_ctrl_with_connectargs(port);
+	if (device)
 		port->instance = ctrl_instance(port->device);
 }
 
@@ -939,12 +945,12 @@ static void json_update_port(struct json_object *port_array,
 	struct json_object *port_obj = json_create_object();
 
 	json_object_add_value_string(port_obj, "transport", port->transport);
-	if (port->traddr)
+	if (port->traddr && strlen(port->traddr))
 		json_object_add_value_string(port_obj, "traddr", port->traddr);
-	if (port->trsvcid)
+	if (port->trsvcid && strlen(port->trsvcid))
 		json_object_add_value_string(port_obj, "trsvcid",
 					     port->trsvcid);
-	if (port->host_traddr)
+	if (port->host_traddr && strlen(port->host_traddr))
 		json_object_add_value_string(port_obj, "host_traddr",
 					     port->host_traddr);
 	JSON_INT_OPTION(port, port_obj, nr_io_queues);
@@ -1167,7 +1173,7 @@ add_argument(char **argstr, int *max_len, char *arg_str, char *arg)
 {
 	int len;
 
-	if (arg && strcmp(arg, "none")) {
+	if (arg && strlen(arg) && strcmp(arg, "none")) {
 		len = snprintf(*argstr, *max_len, ",%s=%s", arg_str, arg);
 		if (len < 0)
 			return -EINVAL;
@@ -1460,7 +1466,7 @@ retry:
 		p += len;
 	}
 
-	if (port->host_traddr && strcmp(port->host_traddr, "none")) {
+	if (port->host_traddr && strlen(port->host_traddr)) {
 		len = sprintf(p, ",host_traddr=%s", port->host_traddr);
 		if (len < 0)
 			return -EINVAL;
@@ -1525,7 +1531,8 @@ retry:
 		ret = do_discover(port, argstr, true, flags);
 	} else
 		ret = add_ctrl(argstr, host->cfg->quiet);
-	if (ret == -EINVAL && e->treq & NVMF_TREQ_DISABLE_SQFLOW) {
+	if (ret == -EINVAL && disable_sqflow &&
+	    e->treq & NVMF_TREQ_DISABLE_SQFLOW) {
 		/* disable_sqflow param might not be supported, try without it */
 		disable_sqflow = false;
 		goto retry;
@@ -1550,16 +1557,19 @@ static bool cargs_match_found(struct nvmf_disc_rsp_page_entry *entry,
 				if (strcmp(port->transport,
 					   trtype_str(entry->trtype)))
 					continue;
-				if (port->traddr &&
-				    strcmp(port->traddr, entry->traddr))
-					continue;
-				if (orig->host_traddr &&
-				    strcmp(orig->host_traddr,
-					   port->host_traddr))
-					continue;
-				if (port->trsvcid &&
-				    strcmp(port->trsvcid, entry->trsvcid))
-					continue;
+				if (strcmp(port->transport, "loop")) {
+					if (strcmp(port->traddr, entry->traddr))
+						continue;
+					if (strcmp(orig->host_traddr,
+						   port->host_traddr))
+						continue;
+					if (strcmp(port->trsvcid,
+						   entry->trsvcid))
+						continue;
+				}
+				printf("Found %s:%s-%s instance %d\n",
+				       subsys->nqn, port->transport,
+				       port->traddr, port->instance);
 				return true;
 			}
 		}
@@ -1709,8 +1719,9 @@ static int do_discover(struct port_config *port,
 		err = remove_ctrl(instance);
 		if (err)
 			return err;
-	} else
+	} else {
 		port->instance = instance;
+	}
 	switch (ret) {
 	case DISC_OK:
 		if (connect)
@@ -1869,6 +1880,7 @@ int fabrics_discover(const char *desc, int argc, char **argv, bool connect)
 	struct port_config static_port = {
 		.ctrl_loss_tmo = NVMF_DEF_CTRL_LOSS_TMO,
 		.tos = -1,
+		.instance = -1,
 	};
 
 	OPT_ARGS(opts) = {
@@ -1923,11 +1935,11 @@ int fabrics_discover(const char *desc, int argc, char **argv, bool connect)
 	if (!static_host.hostid)
 		nvmf_hostid_file(&static_host);
 	if (static_port.traddr && !strcmp(static_port.traddr, "none"))
-		static_port.traddr = NULL;
+		static_port.traddr = strdup("\0");
 	if (static_port.host_traddr && !strcmp(static_port.host_traddr, "none"))
-		static_port.host_traddr = NULL;
+		static_port.host_traddr = strdup("\0");
 	if (static_port.trsvcid && !strcmp(static_port.trsvcid, "none"))
-		static_port.trsvcid = NULL;
+		static_port.trsvcid = strdup("\0");
 	if (cfg.writeconfig)
 		json_read_config(&cfg);
 
@@ -1976,6 +1988,7 @@ int fabrics_connect(const char *desc, int argc, char **argv)
 	struct port_config static_port = {
 		.ctrl_loss_tmo = NVMF_DEF_CTRL_LOSS_TMO,
 		.tos = -1,
+		.instance = -1,
 	};
 
 	OPT_ARGS(opts) = {
@@ -2030,11 +2043,11 @@ int fabrics_connect(const char *desc, int argc, char **argv)
 	if (!static_host.hostid)
 		nvmf_hostid_file(&static_host);
 	if (static_port.traddr && !strcmp(static_port.traddr, "none"))
-		static_port.traddr = NULL;
+		static_port.traddr = strdup("\0");
 	if (static_port.host_traddr && !strcmp(static_port.host_traddr, "none"))
-		static_port.host_traddr = NULL;
+		static_port.host_traddr = strdup("\0");
 	if (static_port.trsvcid && !strcmp(static_port.trsvcid, "none"))
-		static_port.trsvcid = NULL;
+		static_port.trsvcid = strdup("\0");
 	if (cfg.writeconfig)
 		json_read_config(&cfg);
 
