@@ -1905,6 +1905,12 @@ int fabrics_discover(const char *desc, int argc, char **argv, bool connect)
 		nvmf_hostnqn_file(&static_host);
 	if (!static_host.hostid)
 		nvmf_hostid_file(&static_host);
+	if (static_port.traddr && !strcmp(static_port.traddr, "none"))
+		static_port.traddr = NULL;
+	if (static_port.host_traddr && !strcmp(static_port.host_traddr, "none"))
+		static_port.host_traddr = NULL;
+	if (static_port.trsvcid && !strcmp(static_port.trsvcid, "none"))
+		static_port.trsvcid = NULL;
 	if (cfg.writeconfig)
 		json_read_config(&cfg);
 
@@ -2003,6 +2009,12 @@ int fabrics_connect(const char *desc, int argc, char **argv)
 		nvmf_hostnqn_file(&static_host);
 	if (!static_host.hostid)
 		nvmf_hostid_file(&static_host);
+	if (static_port.traddr && !strcmp(static_port.traddr, "none"))
+		static_port.traddr = NULL;
+	if (static_port.host_traddr && !strcmp(static_port.host_traddr, "none"))
+		static_port.host_traddr = NULL;
+	if (static_port.trsvcid && !strcmp(static_port.trsvcid, "none"))
+		static_port.trsvcid = NULL;
 	if (cfg.writeconfig)
 		json_read_config(&cfg);
 
