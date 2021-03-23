@@ -83,10 +83,10 @@ struct port_config {
 	int  ctrl_loss_tmo;
 	int  tos;
 	char *device;
-	int  duplicate_connect;
-	int  disable_sqflow;
-	int  hdr_digest;
-	int  data_digest;
+	bool duplicate_connect;
+	bool disable_sqflow;
+	bool hdr_digest;
+	bool data_digest;
 	bool persistent;
 };
 
@@ -128,6 +128,7 @@ LIST_HEAD(tracked_ctrls);
 #define BUF_SIZE		4096
 #define PATH_NVME_FABRICS	"/dev/nvme-fabrics"
 #define PATH_NVMF_DISC		"/etc/nvme/discovery.conf"
+#define PATH_NVMF_CONFIG	"/etc/nvme/connect.json"
 #define PATH_NVMF_HOSTNQN	"/etc/nvme/hostnqn"
 #define PATH_NVMF_HOSTID	"/etc/nvme/hostid"
 #define MAX_DISC_ARGS		10
@@ -849,6 +850,213 @@ static struct port_config *lookup_port(struct subsys_config *subsys,
 	port->subsys = subsys;
 	list_add(&port->entry, &subsys->port_list);
 	return port;
+}
+
+#define JSON_UPDATE_INT_OPTION(c, k, a, o)				\
+	if (!strcmp(# a, k ) && !c->a) c->a = json_object_get_int(o);
+#define JSON_UPDATE_BOOL_OPTION(c, k, a, o)				\
+	if (!strcmp(# a, k ) && !c->a) c->a = json_object_get_boolean(o);
+
+static void json_update_attributes(struct port_config *cfg,
+				   struct json_object *obj)
+{
+	json_object_object_foreach(obj, key_str, val_obj) {
+		JSON_UPDATE_INT_OPTION(cfg, key_str, nr_io_queues, val_obj);
+		JSON_UPDATE_INT_OPTION(cfg, key_str, nr_write_queues, val_obj);
+		JSON_UPDATE_INT_OPTION(cfg, key_str, nr_poll_queues, val_obj);
+		JSON_UPDATE_INT_OPTION(cfg, key_str, queue_size, val_obj);
+		JSON_UPDATE_INT_OPTION(cfg, key_str, keep_alive_tmo, val_obj);
+		JSON_UPDATE_INT_OPTION(cfg, key_str, reconnect_delay, val_obj);
+		JSON_UPDATE_INT_OPTION(cfg, key_str, ctrl_loss_tmo, val_obj);
+		JSON_UPDATE_INT_OPTION(cfg, key_str, tos, val_obj);
+		JSON_UPDATE_BOOL_OPTION(cfg, key_str, duplicate_connect, val_obj);
+		JSON_UPDATE_BOOL_OPTION(cfg, key_str, disable_sqflow, val_obj);
+		JSON_UPDATE_BOOL_OPTION(cfg, key_str, hdr_digest, val_obj);
+		JSON_UPDATE_BOOL_OPTION(cfg, key_str, data_digest, val_obj);
+		JSON_UPDATE_BOOL_OPTION(cfg, key_str, persistent, val_obj);
+	}
+}
+
+static void json_parse_port(struct subsys_config *subsys,
+			    struct json_object *port_obj)
+{
+	struct json_object *attr_obj;
+	struct port_config *port;
+	const char *transport, *traddr;
+	const char *host_traddr = NULL, *trsvcid = NULL;
+
+	attr_obj = json_object_object_get(port_obj, "transport");
+	if (!attr_obj)
+		return;
+	transport = json_object_get_string(attr_obj);
+	attr_obj = json_object_object_get(port_obj, "traddr");
+	if (!attr_obj)
+		return;
+	traddr = json_object_get_string(attr_obj);
+	attr_obj = json_object_object_get(port_obj, "host_traddr");
+	if (attr_obj)
+		host_traddr = json_object_get_string(attr_obj);
+	attr_obj = json_object_object_get(port_obj, "trsvcid");
+	if (attr_obj)
+		trsvcid = json_object_get_string(attr_obj);
+	port = lookup_port(subsys, transport, traddr, host_traddr, trsvcid);
+	if (port)
+		json_update_attributes(port, port_obj);
+}
+
+static void json_parse_subsys(struct host_config *host,
+			      struct json_object *subsys_obj)
+{
+	struct json_object *nqn_obj, *port_array;
+	struct subsys_config *subsys;
+	const char *nqn;
+	int p;
+
+	nqn_obj = json_object_object_get(subsys_obj, "nqn");
+	if (!nqn_obj)
+		return;
+	nqn = json_object_get_string(nqn_obj);
+	subsys = lookup_subsys(host, nqn);
+	port_array = json_object_object_get(subsys_obj, "ports");
+	if (!port_array)
+		return;
+	for (p = 0; p < json_object_array_length(port_array); p++) {
+		struct json_object *port_obj;
+
+		port_obj = json_object_array_get_idx(port_array, p);
+		json_parse_port(subsys, port_obj);
+	}
+}
+
+static void json_parse_host(struct config *cfg, struct json_object *host_obj)
+{
+	struct json_object *attr_obj, *subsys_array, *subsys_obj;
+	const char *hostnqn, *hostid = NULL;
+	struct host_config *host;
+	int s;
+
+	attr_obj = json_object_object_get(host_obj, "hostnqn");
+	if (!attr_obj)
+		return;
+	hostnqn = json_object_get_string(attr_obj);
+	attr_obj = json_object_object_get(host_obj, "hostid");
+	if (attr_obj)
+		hostid = json_object_get_string(attr_obj);
+	host = lookup_host(cfg, hostnqn, hostid);
+	subsys_array = json_object_object_get(host_obj, "subsystems");
+	if (!subsys_array)
+		return;
+	for (s = 0; s < json_object_array_length(subsys_array); s++) {
+		subsys_obj = json_object_array_get_idx(subsys_array, s);
+		json_parse_subsys(host, subsys_obj);
+	}
+}
+
+static void json_read_config(struct config *cfg)
+{
+	struct json_object *json_root, *host_obj;
+	int h;
+
+	json_root = json_object_from_file(PATH_NVMF_CONFIG);
+	if (!json_root) {
+		fprintf(stderr, "Failed to read %s, %s\n",
+			PATH_NVMF_CONFIG, json_util_get_last_err());
+		json_root = json_object_new_array();
+		return;
+	}
+	for (h = 0; h < json_object_array_length(json_root); h++) {
+		host_obj = json_object_array_get_idx(json_root, h);
+		json_parse_host(cfg, host_obj);
+	}
+	json_object_put(json_root);
+}
+
+#define JSON_INT_OPTION(c, p, o)					\
+	if ((c)->o) json_object_add_value_int((p), # o , (c)->o)
+#define JSON_BOOL_OPTION(c, p, o)					\
+	if ((c)->o) json_object_add_value_bool((p), # o , (c)->o)
+
+static void json_update_port(struct json_object *port_array,
+			     struct port_config *port)
+{
+	struct json_object *port_obj = json_create_object();
+
+	json_object_add_value_string(port_obj, "transport", port->transport);
+	json_object_add_value_string(port_obj, "traddr", port->traddr);
+	if (port->trsvcid)
+		json_object_add_value_string(port_obj, "trsvcid",
+					     port->trsvcid);
+	if (port->host_traddr)
+		json_object_add_value_string(port_obj, "host_traddr",
+					     port->host_traddr);
+	JSON_INT_OPTION(port, port_obj, nr_io_queues);
+	JSON_INT_OPTION(port, port_obj, nr_write_queues);
+	JSON_INT_OPTION(port, port_obj, nr_poll_queues);
+	JSON_INT_OPTION(port, port_obj, queue_size);
+	JSON_INT_OPTION(port, port_obj, keep_alive_tmo);
+	JSON_INT_OPTION(port, port_obj, reconnect_delay);
+	JSON_INT_OPTION(port, port_obj, ctrl_loss_tmo);
+	if (port->tos > -1)
+		json_object_add_value_int(port_obj, "tos", port->tos);
+	JSON_BOOL_OPTION(port, port_obj, duplicate_connect);
+	JSON_BOOL_OPTION(port, port_obj, disable_sqflow);
+	JSON_BOOL_OPTION(port, port_obj, hdr_digest);
+	JSON_BOOL_OPTION(port, port_obj, data_digest);
+	JSON_BOOL_OPTION(port, port_obj, persistent);
+	json_object_array_add(port_array, port_obj);
+}
+
+static void json_update_subsys(struct json_object *subsys_array,
+			       struct subsys_config *subsys)
+{
+	struct port_config *port;
+	struct json_object *subsys_obj = json_create_object();
+	struct json_object *port_array;
+
+	json_object_add_value_string(subsys_obj, "nqn",
+				     subsys->nqn);
+	port_array = json_create_array();
+	list_for_each_entry(port, &subsys->port_list, entry)
+		json_update_port(port_array, port);
+	if (json_object_array_length(port_array))
+		json_object_object_add(subsys_obj, "ports", port_array);
+	else
+		json_object_put(port_array);
+	json_object_array_add(subsys_array, subsys_obj);
+}
+
+static void json_update_config(struct config *cfg)
+{
+	struct host_config *host;
+	struct json_object *json_root, *host_obj;
+	struct json_object *subsys_array;
+
+	json_root = json_create_array();
+	list_for_each_entry(host, &cfg->host_list, entry) {
+		struct subsys_config *subsys;
+
+		host_obj = json_create_object();
+		json_object_add_value_string(host_obj, "hostnqn",
+					     host->hostnqn);
+		if (host->hostid)
+			json_object_add_value_string(host_obj, "hostid",
+						     host->hostid);
+		subsys_array = json_create_array();
+		list_for_each_entry(subsys, &host->subsys_list, entry)
+			json_update_subsys(subsys_array, subsys);
+		if (json_object_array_length(subsys_array))
+			json_object_object_add(host_obj, "subsystems",
+					       subsys_array);
+		else
+			json_object_put(subsys_array);
+		json_object_array_add(json_root, host_obj);
+	}
+	if (json_object_to_file_ext(PATH_NVMF_CONFIG, json_root,
+				    JSON_C_TO_STRING_PRETTY) < 0) {
+		fprintf(stderr, "Failed to write %s, %s\n",
+			PATH_NVMF_CONFIG, json_util_get_last_err());
+	}
+	json_object_put(json_root);
 }
 
 static void save_discovery_log(struct nvmf_disc_rsp_page_hdr *log,
@@ -1718,6 +1926,7 @@ int fabrics_discover(const char *desc, int argc, char **argv, bool connect)
 		OPT_FLAG("persistent",     'p', &static_port.persistent,      "persistent discovery connection"),
 		OPT_FLAG("quiet",          'S', &cfg.quiet,           "suppress already connected errors"),
 		OPT_FLAG("matching",       'm', &cfg.matching_only,   "connect only records matching the traddr"),
+		OPT_FLAG("writeconfig",    'C', &cfg.writeconfig,     "dump resulting configuration in JSON format"),
 		OPT_FMT("output-format",   'o', &cfg.output_format,   output_format),
 		OPT_END()
 	};
@@ -1744,6 +1953,8 @@ int fabrics_discover(const char *desc, int argc, char **argv, bool connect)
 		nvmf_hostnqn_file(&static_host);
 	if (!static_host.hostid)
 		nvmf_hostid_file(&static_host);
+	if (cfg.writeconfig)
+		json_read_config(&cfg);
 
 	if (!static_port.transport && !static_port.traddr) {
 		ret = discover_from_conf_file(&cfg, &static_host, &static_port,
@@ -1767,6 +1978,8 @@ int fabrics_discover(const char *desc, int argc, char **argv, bool connect)
 		ret = do_discover(&static_port, argstr, connect, flags);
 	}
 
+	if (cfg.writeconfig)
+		json_update_config(&cfg);
 out:
 	return nvme_status_to_errno(ret, true);
 }
@@ -1810,6 +2023,7 @@ int fabrics_connect(const char *desc, int argc, char **argv)
 		OPT_FLAG("disable-sqflow",    'd', &static_port.disable_sqflow,    "disable controller sq flow control (default false)"),
 		OPT_FLAG("hdr-digest",        'g', &static_port.hdr_digest,        "enable transport protocol header digest (TCP transport)"),
 		OPT_FLAG("data-digest",       'G', &static_port.data_digest,       "enable transport protocol data digest (TCP transport)"),
+		OPT_FLAG("writeconfig",       'C', &cfg.writeconfig,               "dump resulting configuration in JSON format"),
 		OPT_END()
 	};
 
@@ -1837,6 +2051,8 @@ int fabrics_connect(const char *desc, int argc, char **argv)
 		nvmf_hostnqn_file(&static_host);
 	if (!static_host.hostid)
 		nvmf_hostid_file(&static_host);
+	if (cfg.writeconfig)
+		json_read_config(&cfg);
 
 	ret = build_options(&static_port, argstr, BUF_SIZE, false);
 	if (ret)
@@ -1852,6 +2068,8 @@ int fabrics_connect(const char *desc, int argc, char **argv)
 	if (instance < 0)
 		ret = instance;
 
+	if (cfg.writeconfig)
+		json_update_config(&cfg);
 out:
 	return nvme_status_to_errno(ret, true);
 }

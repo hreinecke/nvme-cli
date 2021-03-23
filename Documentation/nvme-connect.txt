@@ -27,6 +27,7 @@ SYNOPSIS
 		[--disable-sqflow         | -d]
 		[--hdr-digest             | -g]
 		[--data-digest            | -G]
+		[--writeconfig            | -C]
 
 DESCRIPTION
 -----------
@@ -131,6 +132,10 @@ OPTIONS
 -G::
 --data-digest::
 	Generates/verifies data digest (TCP).
+
+-C::
+--writeconfig::
+	Use JSON configuration from /etc/nvme/config.json.
 
 EXAMPLES
 --------

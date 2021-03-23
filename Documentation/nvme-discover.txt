@@ -28,6 +28,7 @@ SYNOPSIS
 		[--queue-size=<#>         | -Q <#>]
 		[--persistent             | -p]
 		[--quiet                  | -S]
+		[--writeconfig            | -C]
 		[--output-format=<fmt>    | -o <fmt>]
 
 DESCRIPTION
@@ -175,6 +176,10 @@ OPTIONS
 -S::
 --quiet::
 	Suppress already connected errors.
+
+-C::
+--writeconfig::
+	Use JSON configuration from /etc/nvme/config.json.
 
 -o <format>::
 --output-format=<format>::
