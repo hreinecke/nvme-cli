@@ -62,6 +62,8 @@ int json_object_add_value_type(struct json_object *obj, const char *name, int ty
 	json_object_add_value_type((obj), name, JSON_TYPE_OBJECT, (val))
 #define json_object_add_value_array(obj, name, val) \
 	json_object_add_value_type((obj), name, JSON_TYPE_ARRAY, (val))
+#define json_object_add_value_bool(obj, name, val) \
+	json_object_add_value_uint(obj, name, val)
 int json_array_add_value_type(struct json_object *array, int type, ...);
 #define json_array_add_value_int(obj, val) \
 	json_array_add_value_type((obj), JSON_TYPE_INTEGER, (val))
@@ -80,4 +82,9 @@ int json_array_add_value_type(struct json_object *array, int type, ...);
 	(obj->values[obj->value_cnt - 1]->object)
 
 void json_print_object(struct json_object *obj, void *);
+
+static inline int json_object_array_length(struct json_object *array)
+{
+	return array->value_cnt;
+}
 #endif
