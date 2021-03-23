@@ -70,6 +70,7 @@ struct config;
 struct port_config {
 	struct list_head entry;
 	struct subsys_config *subsys;
+	int instance;
 	char *transport;
 	char *traddr;
 	char *trsvcid;
@@ -841,6 +842,8 @@ static struct port_config *lookup_port(struct subsys_config *subsys,
 		return NULL;
 	memset(port, 0, sizeof(struct port_config));
 	INIT_LIST_HEAD(&port->entry);
+	port->instance = -1;
+	port->tos = -1;
 	port->transport = strdup(transport);
 	port->traddr = strdup(traddr);
 	if (host_traddr)
@@ -1570,6 +1573,8 @@ retry:
 		disable_sqflow = false;
 		goto retry;
 	}
+	if (ret >= 0)
+		port->instance = ret;
 	return ret;
 }
 
@@ -1742,8 +1747,8 @@ static int do_discover(struct port_config *port,
 		err = remove_ctrl(instance);
 		if (err)
 			return err;
-	}
-
+	} else
+		port->instance = instance;
 	switch (ret) {
 	case DISC_OK:
 		if (connect)
@@ -2067,6 +2072,8 @@ int fabrics_connect(const char *desc, int argc, char **argv)
 	instance = add_ctrl(argstr, cfg.quiet);
 	if (instance < 0)
 		ret = instance;
+	else
+		static_port.instance = instance;
 
 	if (cfg.writeconfig)
 		json_update_config(&cfg);
