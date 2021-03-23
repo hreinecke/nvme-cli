@@ -859,6 +859,9 @@ static void json_parse_port(struct subsys_config *subsys,
 	port = lookup_port(subsys, transport, traddr, host_traddr, trsvcid);
 	if (port)
 		json_update_attributes(port, port_obj);
+	port->device = find_ctrl_with_connectargs(port);
+	if (port->device)
+		port->instance = ctrl_instance(port->device);
 }
 
 static void json_parse_subsys(struct host_config *host,
