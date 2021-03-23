@@ -310,36 +310,41 @@ static int ctrl_instance(char *device)
  */
 static bool ctrl_matches_connectargs(char *name, struct port_config *port)
 {
-	bool found = false;
 	char *path, *addr, *traddr, *trsvcid, *host_traddr;
 	int ret;
 
 	ret = asprintf(&path, "%s/%s", SYS_NVME, name);
 	if (ret < 0)
-		return found;
+		return false;
 
 	addr = nvme_get_ctrl_attr(path, "address");
 	if (!addr) {
 		fprintf(stderr, "nvme_get_ctrl_attr failed\n");
-		return found;
+		return false;
 	}
 
 	if (strcmp(port->subsys->nqn,
 		   nvme_get_ctrl_attr(path, "subsysnqn")))
-		return found;
+		return false;
 	if (strcmp(port->transport,
 		   nvme_get_ctrl_attr(path, "transport")))
-		return found;
+		return false;
 	traddr = parse_conn_arg(addr, ' ', conarg_traddr);
 	trsvcid = parse_conn_arg(addr, ' ', conarg_trsvcid);
 	host_traddr = parse_conn_arg(addr, ' ', conarg_host_traddr);
 
-	if ((traddr && !strcmp(traddr, port->traddr)) &&
-	    (trsvcid && !strcmp(trsvcid, port->trsvcid)) &&
-	    (host_traddr && !strcmp(host_traddr, port->host_traddr)))
-		found = true;
+	if ((traddr && !port->traddr) || (!traddr && port->traddr) ||
+	    (traddr && strcmp(traddr, port->traddr)))
+		return false;
+	if ((trsvcid && !port->trsvcid) || (!trsvcid && port->trsvcid) ||
+	    (trsvcid && strcmp(trsvcid, port->trsvcid)))
+		return false;
+	if ((host_traddr && !port->host_traddr) ||
+	    (!host_traddr && port->host_traddr) ||
+	    (host_traddr && strcmp(host_traddr, port->host_traddr)))
+		return false;
 
-	return found;
+	return true;
 }
 
 /*
@@ -769,14 +774,17 @@ static struct port_config *lookup_port(struct subsys_config *subsys,
 	list_for_each_entry(port, &subsys->port_list, entry) {
 		if (strcmp(port->transport, transport))
 			continue;
-		if (traddr &&
-		    strcmp(port->traddr, traddr))
+		if ((traddr && !port->traddr) ||
+		    (!traddr && port->traddr) ||
+		    (traddr && strcmp(port->traddr, traddr)))
 			continue;
-		if (host_traddr &&
-		    strcmp(port->host_traddr, host_traddr))
+		if ((host_traddr && !port->host_traddr) ||
+		    (!host_traddr && port->host_traddr) ||
+		    (host_traddr && strcmp(port->host_traddr, host_traddr)))
 			continue;
-		if (trsvcid &&
-		    strcmp(port->trsvcid, trsvcid))
+		if ((trsvcid && !port->trsvcid) ||
+		    (!trsvcid && port->trsvcid) ||
+		    (trsvcid && strcmp(port->trsvcid, trsvcid)))
 			continue;
 		return port;
 	}
@@ -1545,9 +1553,11 @@ static bool cargs_match_found(struct nvmf_disc_rsp_page_entry *entry,
 				if (port->traddr &&
 				    strcmp(port->traddr, entry->traddr))
 					continue;
-				if (orig->host_traddr &&
-				    strcmp(orig->host_traddr,
-					   port->host_traddr))
+				if ((orig->host_traddr && !port->host_traddr) ||
+				    (!orig->host_traddr && port->host_traddr) ||
+				    (orig->host_traddr &&
+				     strcmp(orig->host_traddr,
+					    port->host_traddr)))
 					continue;
 				if (port->trsvcid &&
 				    strcmp(port->trsvcid, entry->trsvcid))
