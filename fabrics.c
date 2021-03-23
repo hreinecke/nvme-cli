@@ -116,15 +116,12 @@ struct config {
 };
 
 struct connect_args {
-	struct list_head entry;
 	char *subsysnqn;
 	char *transport;
 	char *traddr;
 	char *trsvcid;
 	char *host_traddr;
 };
-
-LIST_HEAD(tracked_ctrls);
 
 #define BUF_SIZE		4096
 #define PATH_NVME_FABRICS	"/dev/nvme-fabrics"
@@ -405,7 +402,6 @@ static struct connect_args *extract_connect_args(char *argstr)
 	cargs = calloc(1, sizeof(*cargs));
 	if (!cargs)
 		return NULL;
-	INIT_LIST_HEAD(&cargs->entry);
 	cargs->subsysnqn = parse_conn_arg(argstr, ',', conarg_nqn);
 	cargs->transport = parse_conn_arg(argstr, ',', conarg_transport);
 	cargs->traddr = parse_conn_arg(argstr, ',', conarg_traddr);
@@ -416,24 +412,12 @@ static struct connect_args *extract_connect_args(char *argstr)
 
 static void free_connect_args(struct connect_args *cargs)
 {
-	list_del_init(&cargs->entry);
 	free(cargs->subsysnqn);
 	free(cargs->transport);
 	free(cargs->traddr);
 	free(cargs->trsvcid);
 	free(cargs->host_traddr);
 	free(cargs);
-}
-
-static void track_ctrl(char *argstr)
-{
-	struct connect_args *cargs;
-
-	cargs = extract_connect_args(argstr);
-	if (!cargs)
-		return;
-
-	list_add_tail(&cargs->entry, &tracked_ctrls);
 }
 
 static int add_ctrl(const char *argstr, bool quiet)
@@ -479,7 +463,6 @@ static int add_ctrl(const char *argstr, bool quiet)
 			if (match_int(args, &token))
 				goto out_fail;
 			ret = token;
-			track_ctrl((char *)argstr);
 			goto out_close;
 		default:
 			/* ignore */
@@ -1579,26 +1562,40 @@ retry:
 }
 
 static bool cargs_match_found(struct nvmf_disc_rsp_page_entry *entry,
-			      char *host_traddr)
+			      struct port_config *orig)
 {
+	struct port_config *port;
+	struct subsys_config *subsys = orig->subsys;
+	struct host_config *host = subsys->host;
 	struct connect_args cargs = {};
-	struct connect_args *c;
+
+	list_for_each_entry(subsys, &host->subsys_list, entry) {
+		if (!strcmp(subsys->nqn, entry->subnqn)) {
+			list_for_each_entry(port, &subsys->port_list, entry) {
+				if (port->instance < 0)
+					continue;
+				if (strcmp(port->transport,
+					   trtype_str(entry->trtype)))
+					continue;
+				if (strcmp(port->traddr, entry->traddr))
+					continue;
+				if (orig->host_traddr &&
+				    strcmp(orig->host_traddr,
+					   port->host_traddr))
+					continue;
+				if (port->trsvcid &&
+				    strcmp(port->trsvcid, entry->trsvcid))
+					continue;
+				return true;
+			}
+		}
+	}
 
 	cargs.traddr = strdup(entry->traddr);
 	cargs.transport = strdup(trtype_str(entry->trtype));
 	cargs.subsysnqn = strdup(entry->subnqn);
 	cargs.trsvcid = strdup(entry->trsvcid);
-	cargs.host_traddr = strdup(host_traddr ?: "\0");
-
-	/* check if we have a match in the discovery recursion */
-	list_for_each_entry(c, &tracked_ctrls, entry) {
-		if (!strcmp(cargs.subsysnqn, c->subsysnqn) &&
-		    !strcmp(cargs.transport, c->transport) &&
-		    !strcmp(cargs.traddr, c->traddr) &&
-		    !strcmp(cargs.trsvcid, c->trsvcid) &&
-		    !strcmp(cargs.host_traddr, c->host_traddr))
-			return true;
-	}
+	cargs.host_traddr = strdup(orig->host_traddr ?: "\0");
 
 	/* check if we have a matching existing controller */
 	return find_ctrl_with_connectargs(&cargs) != NULL;
@@ -1610,7 +1607,7 @@ static bool should_connect(struct port_config *port,
 {
 	int len;
 
-	if (cargs_match_found(entry, port->host_traddr))
+	if (cargs_match_found(entry, port))
 		return false;
 
 	if (!matching_only || !port->traddr)
