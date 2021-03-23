@@ -41,6 +41,7 @@ struct port_config {
 	int  hdr_digest;
 	int  data_digest;
 	bool persistent;
+	bool discovered;
 };
 
 struct subsys_config {
