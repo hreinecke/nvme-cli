@@ -334,8 +334,7 @@ static bool ctrl_matches_connectargs(char *name, struct port_config *port)
 	trsvcid = parse_conn_arg(addr, ' ', conarg_trsvcid);
 	host_traddr = parse_conn_arg(addr, ' ', conarg_host_traddr);
 
-	if ((!strcmp(traddr, port->traddr) ||
-	     !strcmp(port->traddr, "none")) &&
+	if ((traddr && !strcmp(traddr, port->traddr)) &&
 	    (trsvcid && !strcmp(trsvcid, port->trsvcid)) &&
 	    (host_traddr && !strcmp(host_traddr, port->host_traddr)))
 		found = true;
@@ -770,7 +769,8 @@ static struct port_config *lookup_port(struct subsys_config *subsys,
 	list_for_each_entry(port, &subsys->port_list, entry) {
 		if (strcmp(port->transport, transport))
 			continue;
-		if (strcmp(port->traddr, traddr))
+		if (traddr &&
+		    strcmp(port->traddr, traddr))
 			continue;
 		if (host_traddr &&
 		    strcmp(port->host_traddr, host_traddr))
@@ -788,7 +788,8 @@ static struct port_config *lookup_port(struct subsys_config *subsys,
 	port->instance = -1;
 	port->tos = -1;
 	port->transport = strdup(transport);
-	port->traddr = strdup(traddr);
+	if (traddr)
+		port->traddr = strdup(traddr);
 	if (host_traddr)
 		port->host_traddr = strdup(host_traddr);
 	if (trsvcid)
@@ -828,7 +829,7 @@ static void json_parse_port(struct subsys_config *subsys,
 {
 	struct json_object *attr_obj;
 	struct port_config *port;
-	const char *transport, *traddr;
+	const char *transport, *traddr = NULL;
 	const char *host_traddr = NULL, *trsvcid = NULL;
 
 	attr_obj = json_object_object_get(port_obj, "transport");
@@ -836,9 +837,8 @@ static void json_parse_port(struct subsys_config *subsys,
 		return;
 	transport = json_object_get_string(attr_obj);
 	attr_obj = json_object_object_get(port_obj, "traddr");
-	if (!attr_obj)
-		return;
-	traddr = json_object_get_string(attr_obj);
+	if (attr_obj)
+		traddr = json_object_get_string(attr_obj);
 	attr_obj = json_object_object_get(port_obj, "host_traddr");
 	if (attr_obj)
 		host_traddr = json_object_get_string(attr_obj);
@@ -928,7 +928,8 @@ static void json_update_port(struct json_object *port_array,
 	struct json_object *port_obj = json_create_object();
 
 	json_object_add_value_string(port_obj, "transport", port->transport);
-	json_object_add_value_string(port_obj, "traddr", port->traddr);
+	if (port->traddr)
+		json_object_add_value_string(port_obj, "traddr", port->traddr);
 	if (port->trsvcid)
 		json_object_add_value_string(port_obj, "trsvcid",
 					     port->trsvcid);
@@ -1536,7 +1537,8 @@ static bool cargs_match_found(struct nvmf_disc_rsp_page_entry *entry,
 				if (strcmp(port->transport,
 					   trtype_str(entry->trtype)))
 					continue;
-				if (strcmp(port->traddr, entry->traddr))
+				if (port->traddr &&
+				    strcmp(port->traddr, entry->traddr))
 					continue;
 				if (orig->host_traddr &&
 				    strcmp(orig->host_traddr,
