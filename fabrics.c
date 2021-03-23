@@ -115,14 +115,6 @@ struct config {
 	char *output_format;
 };
 
-struct connect_args {
-	char *subsysnqn;
-	char *transport;
-	char *traddr;
-	char *trsvcid;
-	char *host_traddr;
-};
-
 #define BUF_SIZE		4096
 #define PATH_NVME_FABRICS	"/dev/nvme-fabrics"
 #define PATH_NVMF_DISC		"/etc/nvme/discovery.conf"
@@ -316,11 +308,10 @@ static int ctrl_instance(char *device)
  * given.
  * Return true/false based on whether it matches
  */
-static bool ctrl_matches_connectargs(char *name, struct connect_args *args)
+static bool ctrl_matches_connectargs(char *name, struct port_config *port)
 {
-	struct connect_args cargs;
 	bool found = false;
-	char *path, *addr;
+	char *path, *addr, *traddr, *trsvcid, *host_traddr;
 	int ret;
 
 	ret = asprintf(&path, "%s/%s", SYS_NVME, name);
@@ -333,27 +324,21 @@ static bool ctrl_matches_connectargs(char *name, struct connect_args *args)
 		return found;
 	}
 
-	cargs.subsysnqn = nvme_get_ctrl_attr(path, "subsysnqn");
-	cargs.transport = nvme_get_ctrl_attr(path, "transport");
-	cargs.traddr = parse_conn_arg(addr, ' ', conarg_traddr);
-	cargs.trsvcid = parse_conn_arg(addr, ' ', conarg_trsvcid);
-	cargs.host_traddr = parse_conn_arg(addr, ' ', conarg_host_traddr);
+	if (strcmp(port->subsys->nqn,
+		   nvme_get_ctrl_attr(path, "subsysnqn")))
+		return found;
+	if (strcmp(port->transport,
+		   nvme_get_ctrl_attr(path, "transport")))
+		return found;
+	traddr = parse_conn_arg(addr, ' ', conarg_traddr);
+	trsvcid = parse_conn_arg(addr, ' ', conarg_trsvcid);
+	host_traddr = parse_conn_arg(addr, ' ', conarg_host_traddr);
 
-	if (!strcmp(cargs.subsysnqn, args->subsysnqn) &&
-	    !strcmp(cargs.transport, args->transport) &&
-	    (!strcmp(cargs.traddr, args->traddr) ||
-	     !strcmp(args->traddr, "none")) &&
-	    (!strcmp(cargs.trsvcid, args->trsvcid) ||
-	     !strcmp(args->trsvcid, "none")) &&
-	    (!strcmp(cargs.host_traddr, args->host_traddr) ||
-	     !strcmp(args->host_traddr, "none")))
+	if ((!strcmp(traddr, port->traddr) ||
+	     !strcmp(port->traddr, "none")) &&
+	    (trsvcid && !strcmp(trsvcid, port->trsvcid)) &&
+	    (host_traddr && !strcmp(host_traddr, port->host_traddr)))
 		found = true;
-
-	free(cargs.subsysnqn);
-	free(cargs.transport);
-	free(cargs.traddr);
-	free(cargs.trsvcid);
-	free(cargs.host_traddr);
 
 	return found;
 }
@@ -365,7 +350,7 @@ static bool ctrl_matches_connectargs(char *name, struct connect_args *args)
  * is returned.
  * If not found, a NULL is returned.
  */
-static char *find_ctrl_with_connectargs(struct connect_args *args)
+static char *find_ctrl_with_connectargs(struct port_config *port)
 {
 	struct dirent **devices;
 	char *devname = NULL;
@@ -378,7 +363,7 @@ static char *find_ctrl_with_connectargs(struct connect_args *args)
 	}
 
 	for (i = 0; i < n; i++) {
-		if (ctrl_matches_connectargs(devices[i]->d_name, args)) {
+		if (ctrl_matches_connectargs(devices[i]->d_name, port)) {
 			devname = strdup(devices[i]->d_name);
 			if (devname == NULL)
 				fprintf(stderr, "no memory for ctrl name %s\n",
@@ -393,31 +378,6 @@ cleanup_devices:
 	free(devices);
 
 	return devname;
-}
-
-static struct connect_args *extract_connect_args(char *argstr)
-{
-	struct connect_args *cargs;
-
-	cargs = calloc(1, sizeof(*cargs));
-	if (!cargs)
-		return NULL;
-	cargs->subsysnqn = parse_conn_arg(argstr, ',', conarg_nqn);
-	cargs->transport = parse_conn_arg(argstr, ',', conarg_transport);
-	cargs->traddr = parse_conn_arg(argstr, ',', conarg_traddr);
-	cargs->trsvcid = parse_conn_arg(argstr, ',', conarg_trsvcid);
-	cargs->host_traddr = parse_conn_arg(argstr, ',', conarg_host_traddr);
-	return cargs;
-}
-
-static void free_connect_args(struct connect_args *cargs)
-{
-	free(cargs->subsysnqn);
-	free(cargs->transport);
-	free(cargs->traddr);
-	free(cargs->trsvcid);
-	free(cargs->host_traddr);
-	free(cargs);
 }
 
 static int add_ctrl(const char *argstr, bool quiet)
@@ -1567,7 +1527,6 @@ static bool cargs_match_found(struct nvmf_disc_rsp_page_entry *entry,
 	struct port_config *port;
 	struct subsys_config *subsys = orig->subsys;
 	struct host_config *host = subsys->host;
-	struct connect_args cargs = {};
 
 	list_for_each_entry(subsys, &host->subsys_list, entry) {
 		if (!strcmp(subsys->nqn, entry->subnqn)) {
@@ -1591,14 +1550,13 @@ static bool cargs_match_found(struct nvmf_disc_rsp_page_entry *entry,
 		}
 	}
 
-	cargs.traddr = strdup(entry->traddr);
-	cargs.transport = strdup(trtype_str(entry->trtype));
-	cargs.subsysnqn = strdup(entry->subnqn);
-	cargs.trsvcid = strdup(entry->trsvcid);
-	cargs.host_traddr = strdup(orig->host_traddr ?: "\0");
+	subsys = lookup_subsys(host, entry->subnqn);
+
+	port = lookup_port(subsys, trtype_str(entry->trtype),
+			   entry->traddr, orig->host_traddr, entry->trsvcid);
 
 	/* check if we have a matching existing controller */
-	return find_ctrl_with_connectargs(&cargs) != NULL;
+	return find_ctrl_with_connectargs(port) != NULL;
 }
 
 static bool should_connect(struct port_config *port,
@@ -1687,12 +1645,6 @@ static int do_discover(struct port_config *port,
 	int status = 0;
 
 	if (port->device) {
-		struct connect_args *cargs;
-
-		cargs = extract_connect_args(argstr);
-		if (!cargs)
-			return -ENOMEM;
-
 		/*
 		 * if the cfg->device passed in matches the connect args
 		 *    cfg->device is left as-is
@@ -1704,10 +1656,8 @@ static int do_discover(struct port_config *port,
 		 *    create a new ctrl.
 		 * endif
 		 */
-		if (!ctrl_matches_connectargs(port->device, cargs))
-			port->device = find_ctrl_with_connectargs(cargs);
-
-		free_connect_args(cargs);
+		if (!ctrl_matches_connectargs(port->device, port))
+			port->device = find_ctrl_with_connectargs(port);
 	}
 
 	if (!port->device) {
