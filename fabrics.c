@@ -1895,10 +1895,12 @@ int fabrics_discover(const char *desc, int argc, char **argv, bool connect)
 
 	INIT_LIST_HEAD(&cfg.host_list);
 	INIT_LIST_HEAD(&static_host.entry);
+	static_host.cfg = &cfg;
 	list_add(&static_host.entry, &cfg.host_list);
 	INIT_LIST_HEAD(&static_host.subsys_list);
 	subsys = lookup_subsys(&static_host, NVME_DISC_SUBSYS_NAME);
 	INIT_LIST_HEAD(&static_port.entry);
+	static_port.subsys = subsys;
 	list_add(&static_port.entry, &subsys->port_list);
 
 	if (!static_host.hostnqn)
@@ -1991,12 +1993,15 @@ int fabrics_connect(const char *desc, int argc, char **argv)
 
 	INIT_LIST_HEAD(&cfg.host_list);
 	INIT_LIST_HEAD(&static_host.entry);
+	static_host.cfg = &cfg;
 	list_add(&static_host.entry, &cfg.host_list);
 	INIT_LIST_HEAD(&static_host.subsys_list);
 	INIT_LIST_HEAD(&static_subsys.entry);
+	static_subsys.host = &static_host;
 	list_add(&static_subsys.entry, &static_host.subsys_list);
 	INIT_LIST_HEAD(&static_subsys.port_list);
 	INIT_LIST_HEAD(&static_port.entry);
+	static_port.subsys = &static_subsys;
 	list_add(&static_port.entry, &static_subsys.port_list);
 
 	if (traddr_is_hostname(&static_port)) {
