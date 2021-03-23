@@ -404,8 +404,9 @@ static int add_ctrl(struct port_config *port_cfg, const char *argstr)
 		case OPT_INSTANCE:
 			if (match_int(args, &token))
 				goto out_fail;
-			ret = token;
+			port_cfg->instance = token;
 			port_cfg->discovered = true;
+			ret = 0;
 			goto out_close;
 		default:
 			/* ignore */
@@ -776,6 +777,7 @@ static struct port_config *lookup_port(struct subsys_config *subsys_cfg,
 	memset(port_cfg, 0, sizeof(struct port_config));
 	INIT_LIST_HEAD(&port_cfg->entry);
 	port_cfg->tos = -1;
+	port_cfg->instance = -1;
 	port_cfg->ctrl_loss_tmo = NVMF_DEF_CTRL_LOSS_TMO;
 	port_cfg->transport = strdup(transport);
 	if (traddr)
@@ -1408,22 +1410,23 @@ static void connect_ctrls(struct port_config *port_cfg,
 	struct host_config *host_cfg = subsys_cfg->host;
 	struct fabrics_config *fabrics_cfg = host_cfg->fabrics;
 	int i;
-	int instance;
 
 	for (i = 0; i < numrec; i++) {
+		int ret;
+
 		if (!should_connect(port_cfg, &log->entries[i],
 				    fabrics_cfg->matching_only))
 			continue;
 
-		instance = connect_ctrl(host_cfg, port_cfg->host_traddr,
-					&log->entries[i]);
+		ret = connect_ctrl(host_cfg, port_cfg->host_traddr,
+				   &log->entries[i]);
 
 		/* clean success */
-		if (instance >= 0)
+		if (!ret)
 			continue;
 
 		/* already connected print message	*/
-		if (instance == -EALREADY) {
+		if (ret == -EALREADY) {
 			const char *traddr = log->entries[i].traddr;
 
 			if (!fabrics_cfg->quiet)
@@ -1465,7 +1468,7 @@ int do_discover(struct port_config *port_cfg, char *argstr,
 	struct fabrics_config *fabrics_cfg = host_cfg->fabrics;
 	struct nvmf_disc_rsp_page_hdr *log = NULL;
 	char *dev_name;
-	int instance, numrec = 0, ret, err;
+	int numrec = 0, ret = 0, err;
 	int status = 0;
 
 	if (port_cfg->device) {
@@ -1485,9 +1488,10 @@ int do_discover(struct port_config *port_cfg, char *argstr,
 	}
 
 	if (!port_cfg->device) {
-		instance = add_ctrl(port_cfg, argstr);
+		ret = add_ctrl(port_cfg, argstr);
 	} else {
 		struct host_config *tmp_host_cfg;
+		int instance;
 
 		instance = ctrl_instance(port_cfg->device);
 		tmp_host_cfg = nvmf_get_host_identifiers(fabrics_cfg, instance);
@@ -1509,19 +1513,23 @@ int do_discover(struct port_config *port_cfg, char *argstr,
 			trsvcid = port_cfg->trsvcid;
 			port_cfg = lookup_port(subsys_cfg, transport, traddr,
 					       host_traddr, trsvcid);
+			if (!port_cfg)
+				ret = -ENOMEM;
+			else
+				port_cfg->instance = instance;
 		}
 	}
-	if (instance < 0)
-		return instance;
+	if (ret < 0)
+		return ret;
 
-	if (asprintf(&dev_name, "/dev/nvme%d", instance) < 0)
+	if (asprintf(&dev_name, "/dev/nvme%d", port_cfg->instance) < 0)
 		return -errno;
 	ret = nvmf_get_log_page_discovery(dev_name, &log, &numrec, &status);
 	free(dev_name);
-	if (port_cfg && port_cfg->persistent)
-		printf("Persistent device: nvme%d\n", instance);
-	if (!port_cfg || (!port_cfg->device && !port_cfg->persistent)) {
-		err = remove_ctrl(instance);
+	if (port_cfg->persistent)
+		printf("Persistent device: nvme%d\n", port_cfg->instance);
+	if (!port_cfg->device && !port_cfg->persistent) {
+		err = remove_ctrl(port_cfg->instance);
 		if (err)
 			return err;
 	}
@@ -1567,7 +1575,7 @@ int do_discover(struct port_config *port_cfg, char *argstr,
 		break;
 	}
 
-	return ret;
+	return 0;
 }
 
 static int discover_from_conf_file(struct fabrics_config *fabrics_cfg,
@@ -1713,6 +1721,7 @@ int fabrics_discover(const char *desc, int argc, char **argv, bool connect)
 		.device = "none",
 		.ctrl_loss_tmo = NVMF_DEF_CTRL_LOSS_TMO,
 		.tos = -1,
+		.instance = -1,
 	};
 
 	OPT_ARGS(opts) = {
@@ -1802,7 +1811,7 @@ out:
 int fabrics_connect(const char *desc, int argc, char **argv)
 {
 	char argstr[BUF_SIZE];
-	int instance, ret;
+	int ret;
 	struct fabrics_config fabrics_cfg = {
 		.output_format = "normal",
 	};
@@ -1819,6 +1828,7 @@ int fabrics_connect(const char *desc, int argc, char **argv)
 		.host_traddr = "none",
 		.ctrl_loss_tmo = NVMF_DEF_CTRL_LOSS_TMO,
 		.tos = -1,
+		.instance = -1,
 	};
 
 	OPT_ARGS(opts) = {
@@ -1879,9 +1889,7 @@ int fabrics_connect(const char *desc, int argc, char **argv)
 		goto out;
 	}
 
-	instance = add_ctrl(&static_port, argstr);
-	if (instance < 0)
-		ret = instance;
+	ret = add_ctrl(&static_port, argstr);
 
 out:
 	return nvme_status_to_errno(ret, true);

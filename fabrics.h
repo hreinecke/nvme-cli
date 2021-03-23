@@ -35,6 +35,7 @@ struct port_config {
 	int  reconnect_delay;
 	int  ctrl_loss_tmo;
 	int  tos;
+	int  instance;
 	char *device;
 	int  duplicate_connect;
 	int  disable_sqflow;
