@@ -333,18 +333,12 @@ static bool ctrl_matches_connectargs(char *name, struct port_config *port)
 	trsvcid = parse_conn_arg(addr, ' ', conarg_trsvcid);
 	host_traddr = parse_conn_arg(addr, ' ', conarg_host_traddr);
 
-	if ((traddr && !port->traddr) || (!traddr && port->traddr) ||
-	    (traddr && strcmp(traddr, port->traddr)))
-		return false;
-	if ((trsvcid && !port->trsvcid) || (!trsvcid && port->trsvcid) ||
-	    (trsvcid && strcmp(trsvcid, port->trsvcid)))
-		return false;
-	if ((host_traddr && !port->host_traddr) ||
-	    (!host_traddr && port->host_traddr) ||
-	    (host_traddr && strcmp(host_traddr, port->host_traddr)))
-		return false;
+	if ((traddr && !strcmp(traddr, port->traddr)) &&
+	    (trsvcid && !strcmp(trsvcid, port->trsvcid)) &&
+	    (host_traddr && !strcmp(host_traddr, port->host_traddr)))
+		return true;
 
-	return true;
+	return false;
 }
 
 /*
@@ -774,17 +768,14 @@ static struct port_config *lookup_port(struct subsys_config *subsys,
 	list_for_each_entry(port, &subsys->port_list, entry) {
 		if (strcmp(port->transport, transport))
 			continue;
-		if ((traddr && !port->traddr) ||
-		    (!traddr && port->traddr) ||
-		    (traddr && strcmp(port->traddr, traddr)))
+		if (traddr &&
+		    strcmp(port->traddr, traddr))
 			continue;
-		if ((host_traddr && !port->host_traddr) ||
-		    (!host_traddr && port->host_traddr) ||
-		    (host_traddr && strcmp(port->host_traddr, host_traddr)))
+		if (host_traddr &&
+		    strcmp(port->host_traddr, host_traddr))
 			continue;
-		if ((trsvcid && !port->trsvcid) ||
-		    (!trsvcid && port->trsvcid) ||
-		    (trsvcid && strcmp(port->trsvcid, trsvcid)))
+		if (trsvcid &&
+		    strcmp(port->trsvcid, trsvcid))
 			continue;
 		return port;
 	}
@@ -796,12 +787,18 @@ static struct port_config *lookup_port(struct subsys_config *subsys,
 	port->instance = -1;
 	port->tos = -1;
 	port->transport = strdup(transport);
-	if (traddr && strlen(traddr))
+	if (traddr)
 		port->traddr = strdup(traddr);
-	if (host_traddr && strlen(host_traddr))
+	else
+		port->traddr = strdup("\0");
+	if (host_traddr)
 		port->host_traddr = strdup(host_traddr);
-	if (trsvcid && strlen(trsvcid))
+	else
+		port->host_traddr = strdup("\0");
+	if (trsvcid)
 		port->trsvcid = strdup(trsvcid);
+	else
+		port->trsvcid = strdup("\0");
 	port->subsys = subsys;
 	list_add(&port->entry, &subsys->port_list);
 	return port;
@@ -1556,11 +1553,9 @@ static bool cargs_match_found(struct nvmf_disc_rsp_page_entry *entry,
 				if (port->traddr &&
 				    strcmp(port->traddr, entry->traddr))
 					continue;
-				if ((orig->host_traddr && !port->host_traddr) ||
-				    (!orig->host_traddr && port->host_traddr) ||
-				    (orig->host_traddr &&
-				     strcmp(orig->host_traddr,
-					    port->host_traddr)))
+				if (orig->host_traddr &&
+				    strcmp(orig->host_traddr,
+					   port->host_traddr))
 					continue;
 				if (port->trsvcid &&
 				    strcmp(port->trsvcid, entry->trsvcid))
