@@ -942,7 +942,8 @@ static void json_update_port(struct json_object *port_array,
 	JSON_INT_OPTION(port, port_obj, queue_size);
 	JSON_INT_OPTION(port, port_obj, keep_alive_tmo);
 	JSON_INT_OPTION(port, port_obj, reconnect_delay);
-	JSON_INT_OPTION(port, port_obj, ctrl_loss_tmo);
+	if (strcmp(port->transport, "loop"))
+		JSON_INT_OPTION(port, port_obj, ctrl_loss_tmo);
 	if (port->tos > -1)
 		json_object_add_value_int(port_obj, "tos", port->tos);
 	JSON_BOOL_OPTION(port, port_obj, duplicate_connect);
