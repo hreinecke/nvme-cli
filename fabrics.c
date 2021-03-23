@@ -788,11 +788,11 @@ static struct port_config *lookup_port(struct subsys_config *subsys,
 	port->instance = -1;
 	port->tos = -1;
 	port->transport = strdup(transport);
-	if (traddr)
+	if (traddr && strlen(traddr))
 		port->traddr = strdup(traddr);
-	if (host_traddr)
+	if (host_traddr && strlen(host_traddr))
 		port->host_traddr = strdup(host_traddr);
-	if (trsvcid)
+	if (trsvcid && strlen(trsvcid))
 		port->trsvcid = strdup(trsvcid);
 	port->subsys = subsys;
 	list_add(&port->entry, &subsys->port_list);
