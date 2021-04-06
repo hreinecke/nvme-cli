@@ -1326,12 +1326,11 @@ static bool should_connect(struct fabrics_config *fabrics_cfg,
 	return !strncmp(fabrics_cfg->traddr, entry->traddr, len);
 }
 
-static int connect_ctrls(struct fabrics_config *fabrics_cfg,
-			 struct nvmf_disc_rsp_page_hdr *log, int numrec)
+static void connect_ctrls(struct fabrics_config *fabrics_cfg,
+			  struct nvmf_disc_rsp_page_hdr *log, int numrec)
 {
 	int i;
 	int instance;
-	int ret = 0;
 
 	for (i = 0; i < numrec; i++) {
 		if (!should_connect(fabrics_cfg, &log->entries[i]))
@@ -1361,8 +1360,6 @@ static int connect_ctrls(struct fabrics_config *fabrics_cfg,
 		 * fail and continue on to the next log element.
 		 */
 	}
-
-	return ret;
 }
 
 static void nvmf_get_host_identifiers(struct fabrics_config *fabrics_cfg,
@@ -1424,13 +1421,14 @@ int do_discover(struct fabrics_config *fabrics_cfg, char *argstr,
 	switch (ret) {
 	case DISC_OK:
 		if (connect)
-			ret = connect_ctrls(fabrics_cfg, log, numrec);
+			connect_ctrls(fabrics_cfg, log, numrec);
 		else if (fabrics_cfg->raw || flags == BINARY)
 			save_discovery_log(log, numrec, fabrics_cfg->raw);
 		else if (flags == JSON)
 			json_discovery_log(log, numrec);
 		else
 			print_discovery_log(log, numrec);
+		ret = 0;
 		break;
 	case DISC_GET_NUMRECS:
 		msg(LOG_ERR,
@@ -1443,7 +1441,7 @@ int do_discover(struct fabrics_config *fabrics_cfg, char *argstr,
 		break;
 	case DISC_NO_LOG:
 		fprintf(stdout, "No discovery log entries to fetch.\n");
-		ret = DISC_OK;
+		ret = 0;
 		break;
 	case DISC_RETRY_EXHAUSTED:
 		fprintf(stdout, "Discovery retries exhausted.\n");
