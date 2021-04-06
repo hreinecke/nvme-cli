@@ -1401,7 +1401,7 @@ static bool should_connect(struct port_config *port_cfg,
 	return !strncmp(port_cfg->traddr, entry->traddr, len);
 }
 
-static int connect_ctrls(struct port_config *port_cfg,
+static void connect_ctrls(struct port_config *port_cfg,
 			 struct nvmf_disc_rsp_page_hdr *log, int numrec)
 {
 	struct subsys_config *subsys_cfg = port_cfg->subsys;
@@ -1409,7 +1409,6 @@ static int connect_ctrls(struct port_config *port_cfg,
 	struct fabrics_config *fabrics_cfg = host_cfg->fabrics;
 	int i;
 	int instance;
-	int ret = 0;
 
 	for (i = 0; i < numrec; i++) {
 		if (!should_connect(port_cfg, &log->entries[i],
@@ -1443,8 +1442,6 @@ static int connect_ctrls(struct port_config *port_cfg,
 		 * fail and continue on to the next log element.
 		 */
 	}
-
-	return ret;
 }
 
 static struct host_config *nvmf_get_host_identifiers(struct fabrics_config *fabrics_cfg,
@@ -1532,9 +1529,10 @@ int do_discover(struct port_config *port_cfg, char *argstr,
 	switch (ret) {
 	case DISC_OK:
 		if (connect) {
-			if (port_cfg)
-				ret = connect_ctrls(port_cfg, log, numrec);
-			else
+			if (port_cfg) {
+				connect_ctrls(port_cfg, log, numrec);
+				ret = 0;
+			} else
 				ret = -ENOMEM;
 		} else if (fabrics_cfg->raw || flags == BINARY)
 			save_discovery_log(log, numrec, fabrics_cfg->raw);
