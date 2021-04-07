@@ -2087,11 +2087,14 @@ out:
 int fabrics_disconnect_all(const char *desc, int argc, char **argv)
 {
 	struct nvme_topology t = { };
-	int i, j, err;
+	struct nvme_subsystem *s;
+	int err;
 
 	OPT_ARGS(opts) = {
 		OPT_END()
 	};
+
+	INIT_LIST_HEAD(&t.subsys_list);
 
 	err = argconfig_parse(argc, argv, desc, opts);
 	if (err)
@@ -2103,12 +2106,10 @@ int fabrics_disconnect_all(const char *desc, int argc, char **argv)
 		goto out;
 	}
 
-	for (i = 0; i < t.nr_subsystems; i++) {
-		struct nvme_subsystem *s = &t.subsystems[i];
+	list_for_each_entry(s, &t.subsys_list, topology_entry) {
+		struct nvme_ctrl *c;
 
-		for (j = 0; j < s->nr_ctrls; j++) {
-			struct nvme_ctrl *c = &s->ctrls[j];
-
+		list_for_each_entry(c, &s->ctrl_list, subsys_entry) {
 			if (!c->transport || !strcmp(c->transport, "pcie"))
 				continue;
 			err = disconnect_by_device(c->name);

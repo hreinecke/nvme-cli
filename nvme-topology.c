@@ -234,10 +234,8 @@ static char *get_nvme_ctrl_path_ana_state(char *path, int nsid)
 static bool ns_attached_to_ctrl(int nsid, struct nvme_ctrl *ctrl)
 {
 	struct nvme_namespace *n;
-	int i;
 
-	for (i = 0; i < ctrl->nr_namespaces; i++) {
-		n = &ctrl->namespaces[i];
+	list_for_each_entry(n, &ctrl->ns_list, ctrl_entry) {
 		if (nsid == n->nsid)
 			return true;
 	}
@@ -270,38 +268,37 @@ static int scan_ctrl(struct nvme_ctrl *c, char *p, __u32 ns_instance)
 		return errno;
 	}
 
-	c->nr_namespaces = ret;
-	c->namespaces = calloc(c->nr_namespaces, sizeof(*n));
-	if (c->namespaces) {
-		for (i = 0; i < c->nr_namespaces; i++) {
-			char *ns_path, nsid[16];
-			int ns_fd;
+	for (i = 0; i < ret; i++) {
+		char *ns_path, nsid[16];
+		int ns_fd;
 
-			n = &c->namespaces[i];
-			n->name = strdup(ns[i]->d_name);
-			n->ctrl = c;
-			ret = asprintf(&ns_path, "%s/%s/nsid", path, n->name);
-			if (ret < 0)
-				continue;
-			ns_fd = open(ns_path, O_RDONLY);
-			if (ns_fd < 0) {
-				free(ns_path);
-				continue;
-			}
-			ret = read(ns_fd, nsid, 16);
-			if (ret < 0) {
-				close(ns_fd);
-				free(ns_path);
-				continue;
-			}
-			n->nsid = (unsigned)strtol(nsid, NULL, 10);
-			scan_namespace(n);
+		n = calloc(1, sizeof(*n));
+		if (!n)
+			continue;
+
+		INIT_LIST_HEAD(&n->ctrl_entry);
+		INIT_LIST_HEAD(&n->subsys_entry);
+		n->name = strdup(ns[i]->d_name);
+		n->ctrl = c;
+		list_add(&n->ctrl_entry, &c->ns_list);
+		ret = asprintf(&ns_path, "%s/%s/nsid", path, n->name);
+		if (ret < 0)
+			continue;
+		ns_fd = open(ns_path, O_RDONLY);
+		if (ns_fd < 0) {
+			free(ns_path);
+			continue;
+		}
+		ret = read(ns_fd, nsid, 16);
+		if (ret < 0) {
 			close(ns_fd);
 			free(ns_path);
+			continue;
 		}
-	} else {
-		i = c->nr_namespaces;
-		c->nr_namespaces = 0;
+		n->nsid = (unsigned)strtol(nsid, NULL, 10);
+		scan_namespace(n);
+		close(ns_fd);
+		free(ns_path);
 	}
 
 	while (i--)
@@ -334,7 +331,7 @@ static int scan_subsystem(struct nvme_subsystem *s, __u32 ns_instance, int nsid)
 	struct dirent **ctrls, **ns;
 	struct nvme_namespace *n;
 	struct nvme_ctrl *c;
-	int i, j = 0, ret;
+	int i, ret;
 	char *path;
 
 	ret = asprintf(&path, "%s%s", subsys_dir, s->name);
@@ -347,21 +344,27 @@ static int scan_subsystem(struct nvme_subsystem *s, __u32 ns_instance, int nsid)
 		fprintf(stderr, "Failed to open %s: %s\n", path, strerror(errno));
 		return errno;
 	}
-	s->nr_ctrls = ret;
-	s->ctrls = calloc(s->nr_ctrls, sizeof(*c));
-	for (i = 0; i < s->nr_ctrls; i++) {
-		c = &s->ctrls[j];
+	for (i = 0; i < ret; i++) {
+		c = calloc(1, sizeof(*c));
+		if (!c)
+			continue;
+		INIT_LIST_HEAD(&c->subsys_entry);
+		INIT_LIST_HEAD(&c->ns_list);
 		c->name = strdup(ctrls[i]->d_name);
+		if (!c->name) {
+			free(c);
+			continue;
+		}
 		c->path = strdup(dev);
 		c->subsys = s;
+		list_add(&c->subsys_entry, &s->ctrl_list);
 		scan_ctrl(c, path, ns_instance);
 
-		if (!ns_instance || ns_attached_to_ctrl(nsid, c))
-			j++;
-		else
+		if (ns_instance && !ns_attached_to_ctrl(nsid, c)) {
+			list_del_init(&c->subsys_entry);
 			free_ctrl(c);
+		}
 	}
-	s->nr_ctrls = j;
 
 	while (i--)
 		free(ctrls[i]);
@@ -373,18 +376,21 @@ static int scan_subsystem(struct nvme_subsystem *s, __u32 ns_instance, int nsid)
 		return errno;
 	}
 
-	s->nr_namespaces = ret;
-	s->namespaces = calloc(s->nr_namespaces, sizeof(*n));
-	if (s->namespaces) {
-		for (i = 0; i < s->nr_namespaces; i++) {
-			n = &s->namespaces[i];
-			n->name = strdup(ns[i]->d_name);
-			n->ctrl = &s->ctrls[0];
-			scan_namespace(n);
+	for (i = 0; i < ret; i++) {
+		n = calloc(1, sizeof(*n));
+		if (!n)
+			continue;
+		INIT_LIST_HEAD(&n->ctrl_entry);
+		INIT_LIST_HEAD(&n->subsys_entry);
+		n->name = strdup(ns[i]->d_name);
+		if (!n->name) {
+			free(n);
+			continue;
 		}
-	} else {
-		i = s->nr_namespaces;
-		s->nr_namespaces = 0;
+		list_add(&n->subsys_entry, &s->ns_list);
+		n->ctrl = list_first_entry(&s->ctrl_list, struct nvme_ctrl,
+					   subsys_entry);
+		scan_namespace(n);
 	}
 
 	while (i--)
@@ -450,41 +456,42 @@ static int legacy_list(struct nvme_topology *t, char *dev_dir)
 	int ret = 0, fd, i;
 	char *path;
 
-	t->nr_subsystems = scandir(dev_dir, &devices, scan_ctrls_filter, alphasort);
-	if (t->nr_subsystems == -1) {
+	ret = scandir(dev_dir, &devices, scan_ctrls_filter, alphasort);
+	if (ret < 0) {
 		fprintf(stderr, "Failed to open %s: %s\n", dev_dir, strerror(errno));
 		return errno;
 	}
 
-	t->subsystems = calloc(t->nr_subsystems, sizeof(*s));
-	for (i = 0; i < t->nr_subsystems; i++) {
-		int j;
+	for (i = 0; i < ret; i++) {\
+		int nret, j;
 
-		s = &t->subsystems[i];
-		s->nr_ctrls = 1;
-		s->ctrls = calloc(s->nr_ctrls, sizeof(*c));
+		s = calloc(1, sizeof(*s));
+		if (!s)
+			continue;
+
+		INIT_LIST_HEAD(&s->topology_entry);
+		INIT_LIST_HEAD(&s->ctrl_list);
+		INIT_LIST_HEAD(&s->ns_list);
 		s->name = strdup(devices[i]->d_name);
 		s->subsysnqn = strdup(s->name);
-		s->nr_namespaces = 0;
 
-		c = s->ctrls;
-		c->name = strdup(s->name);
-		sscanf(c->name, "nvme%d", &current_index);
-		c->path = strdup(dev_dir);
-		c->nr_namespaces = scandir(c->path, &namespaces, scan_dev_filter,
-					   alphasort);
-		c->namespaces = calloc(c->nr_namespaces, sizeof(*n));
-		if (!c->namespaces) {
-			while (c->nr_namespaces--)
-				free(namespaces[c->nr_namespaces]);
-			free(namespaces);
+		c = calloc(1, sizeof(*c));
+		if (!c) {
+			free(s->name);
+			free(s);
 			continue;
 		}
+		list_add(&s->topology_entry, &t->subsys_list);
 
-		ret = asprintf(&path, "%s%s", c->path, c->name);
-		if (ret < 0)
+		INIT_LIST_HEAD(&c->subsys_entry);
+		INIT_LIST_HEAD(&c->ns_list);
+		c->name = strdup(s->name);
+		list_add(&c->subsys_entry, &s->ctrl_list);
+
+		sscanf(c->name, "nvme%d", &current_index);
+		c->path = strdup(dev_dir);
+		if (asprintf(&path, "%s%s", c->path, c->name) < 0)
 			continue;
-		ret = 0;
 
 		fd = open(path, O_RDONLY);
 		if (fd > 0) {
@@ -493,10 +500,17 @@ static int legacy_list(struct nvme_topology *t, char *dev_dir)
 		}
 		free(path);
 
-		for (j = 0; j < c->nr_namespaces; j++) {
-			n = &c->namespaces[j];
+		nret = scandir(c->path, &namespaces, scan_dev_filter,
+			       alphasort);
+		for (j = 0; j < nret; j++) {
+			n = calloc(1, sizeof(*n));
+			if (!n)
+				continue;
+			INIT_LIST_HEAD(&n->ctrl_entry);
+			INIT_LIST_HEAD(&n->subsys_entry);
 			n->name = strdup(namespaces[j]->d_name);
 			n->ctrl = c;
+			list_add(&n->ctrl_entry, &c->ns_list);
 			scan_namespace(n);
 			ret = verify_legacy_ns(n);
 			if (ret)
@@ -516,12 +530,15 @@ free:
 
 static void free_ctrl(struct nvme_ctrl *c)
 {
-	int i;
+	struct nvme_namespace *n, *tmp;
 
-	for (i = 0; i < c->nr_namespaces; i++) {
-		struct nvme_namespace *n = &c->namespaces[i];
+	list_for_each_entry_safe(n, tmp, &c->ns_list, ctrl_entry) {
+		list_del_init(&n->ctrl_entry);
+		list_del_init(&n->subsys_entry);
 		free(n->name);
+		free(n);
 	}
+	list_del_init(&c->subsys_entry);
 	free(c->name);
 	free(c->path);
 	free(c->transport);
@@ -530,43 +547,26 @@ static void free_ctrl(struct nvme_ctrl *c)
 	free(c->hostnqn);
 	free(c->hostid);
 	free(c->ana_state);
-	free(c->namespaces);
+	free(c);
 }
 
 static void free_subsystem(struct nvme_subsystem *s)
 {
-	int i;
+	struct nvme_ctrl *c, *tmp_c;
+	struct nvme_namespace *n, *tmp_n;
 
-	for (i = 0; i < s->nr_ctrls; i++)
-		free_ctrl(&s->ctrls[i]);
-	for (i = 0; i < s->nr_namespaces; i++) {
-		struct nvme_namespace *n = &s->namespaces[i];
+	list_for_each_entry_safe(c, tmp_c, &s->ctrl_list, subsys_entry)
+		free_ctrl(c);
+	list_for_each_entry_safe(n, tmp_n, &s->ns_list, subsys_entry) {
+		list_del_init(&n->subsys_entry);
 		free(n->name);
+		free(n);
 	}
+
+	list_del_init(&s->topology_entry);
 	free(s->name);
 	free(s->subsysnqn);
-	free(s->ctrls);
-	free(s->namespaces);
-}
-
-static int scan_subsystem_dir(struct nvme_topology *t, char *dev_dir)
-{
-	struct nvme_topology dev_dir_t = { };
-	int ret, i, total_nr_subsystems;
-
-	ret = legacy_list(&dev_dir_t, dev_dir);
-	if (ret != 0)
-		return ret;
-
-	total_nr_subsystems = t->nr_subsystems + dev_dir_t.nr_subsystems;
-	t->subsystems = realloc(t->subsystems,
-				total_nr_subsystems * sizeof(struct nvme_subsystem));
-	for (i = 0; i < dev_dir_t.nr_subsystems; i++){
-		t->subsystems[i+t->nr_subsystems] = dev_dir_t.subsystems[i];
-	}
-	t->nr_subsystems = total_nr_subsystems;
-
-	return 0;
+	free(s);
 }
 
 int scan_subsystems(struct nvme_topology *t, const char *subsysnqn,
@@ -574,28 +574,33 @@ int scan_subsystems(struct nvme_topology *t, const char *subsysnqn,
 {
 	struct nvme_subsystem *s;
 	struct dirent **subsys;
-	int ret = 0, i, j = 0;
+	int ret = 0, i;
 
-	t->nr_subsystems = scandir(subsys_dir, &subsys, scan_subsys_filter,
-				   alphasort);
-	if (t->nr_subsystems < 0) {
+	ret = scandir(subsys_dir, &subsys, scan_subsys_filter,
+		      alphasort);
+	if (ret < 0) {
 		ret = legacy_list(t, (char *)dev);
 		if (ret != 0)
 			return ret;
 	} else {
-
-		t->subsystems = calloc(t->nr_subsystems, sizeof(*s));
-		for (i = 0; i < t->nr_subsystems; i++) {
-			s = &t->subsystems[j];
+		for (i = 0; i < ret; i++) {
+			s = calloc(1, sizeof(*s));
+			if (!s)
+				continue;
+			INIT_LIST_HEAD(&s->topology_entry);
+			INIT_LIST_HEAD(&s->ctrl_list);
+			INIT_LIST_HEAD(&s->ns_list);
 			s->name = strdup(subsys[i]->d_name);
+			if (!s->name) {
+				free(s);
+				continue;
+			}
+			list_add(&s->topology_entry, &t->subsys_list);
 			scan_subsystem(s, ns_instance, nsid);
 
-			if (!subsysnqn || !strcmp(s->subsysnqn, subsysnqn))
-				j++;
-			else
+			if (subsysnqn && strcmp(s->subsysnqn, subsysnqn))
 				free_subsystem(s);
 		}
-		t->nr_subsystems = j;
 
 		while (i--)
 			free(subsys[i]);
@@ -603,7 +608,7 @@ int scan_subsystems(struct nvme_topology *t, const char *subsysnqn,
 	}
 
 	if (dev_dir != NULL && strcmp(dev_dir, "/dev/")) {
-		ret = scan_subsystem_dir(t, dev_dir);
+		ret = legacy_list(t, dev_dir);
 	}
 
 	return ret;
@@ -611,11 +616,10 @@ int scan_subsystems(struct nvme_topology *t, const char *subsysnqn,
 
 void free_topology(struct nvme_topology *t)
 {
-	int i;
+	struct nvme_subsystem *s, *tmp_s;
 
-	for (i = 0; i < t->nr_subsystems; i++)
-		free_subsystem(&t->subsystems[i]);
-	free(t->subsystems);
+	list_for_each_entry_safe(s, tmp_s, &t->subsys_list, topology_entry)
+		free_subsystem(s);
 }
 
 char *nvme_char_from_block(char *dev)

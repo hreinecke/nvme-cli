@@ -1750,6 +1750,8 @@ static int list_subsys(int argc, char **argv, struct command *cmd,
 		OPT_END()
 	};
 
+	INIT_LIST_HEAD(&t.subsys_list);
+
 	err = argconfig_parse(argc, argv, desc, opts);
 	if (err < 0)
 		goto ret;
@@ -1804,7 +1806,7 @@ static int list_subsys(int argc, char **argv, struct command *cmd,
 		flags |= VERBOSE;
 
 	err = scan_subsystems(&t, subsysnqn, ns_instance, nsid, NULL);
-	if (err) {
+	if (err < 0) {
 		fprintf(stderr, "Failed to scan namespaces\n");
 		goto free;
 	}
@@ -1845,6 +1847,8 @@ static int list(int argc, char **argv, struct command *cmd, struct plugin *plugi
 		OPT_END()
 	};
 
+	INIT_LIST_HEAD(&t.subsys_list);
+
 	err = argconfig_parse(argc, argv, desc, opts);
 	if (err < 0)
 		return err;
@@ -1860,7 +1864,7 @@ static int list(int argc, char **argv, struct command *cmd, struct plugin *plugi
 		flags |= VERBOSE;
 
 	err = scan_subsystems(&t, NULL, 0, 0, cfg.device_dir);
-	if (err) {
+	if (err < 0) {
 		fprintf(stderr, "Failed to scan namespaces\n");
 		return err;
 	}

@@ -49,6 +49,7 @@
 #include "util/json.h"
 #endif
 #include "util/argconfig.h"
+#include "util/list.h"
 #include "linux/nvme.h"
 
 enum nvme_print_flags {
@@ -63,6 +64,8 @@ struct nvme_subsystem;
 struct nvme_ctrl;
 
 struct nvme_namespace {
+	struct list_head ctrl_entry;
+	struct list_head subsys_entry;
 	char *name;
 	struct nvme_ctrl *ctrl;
 
@@ -71,6 +74,7 @@ struct nvme_namespace {
 };
 
 struct nvme_ctrl {
+	struct list_head subsys_entry;
 	char *name;
 	char *path;
 	struct nvme_subsystem *subsys;
@@ -87,24 +91,20 @@ struct nvme_ctrl {
 
 	struct nvme_id_ctrl id;
 
-	int    nr_namespaces;
-	struct nvme_namespace *namespaces;
+	struct list_head ns_list;
 };
 
 struct nvme_subsystem {
+	struct list_head topology_entry;
 	char *name;
 	char *subsysnqn;
 
-	int    nr_ctrls;
-	struct nvme_ctrl *ctrls;
-
-	int    nr_namespaces;
-	struct nvme_namespace *namespaces;
+	struct list_head ctrl_list;
+	struct list_head ns_list;
 };
 
 struct nvme_topology {
-	int    nr_subsystems;
-	struct nvme_subsystem *subsystems;
+	struct list_head subsys_list;
 };
 
 #define SYS_NVME "/sys/class/nvme"
