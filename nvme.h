@@ -86,8 +86,6 @@ struct nvme_ctrl {
 	char *traddr;
 	char *trsvcid;
 	char *host_traddr;
-	char *hostnqn;
-	char *hostid;
 
 	struct nvme_id_ctrl id;
 
@@ -95,7 +93,8 @@ struct nvme_ctrl {
 };
 
 struct nvme_subsystem {
-	struct list_head topology_entry;
+	struct list_head host_entry;
+	struct nvme_host *host;
 	char *name;
 	char *subsysnqn;
 
@@ -103,8 +102,17 @@ struct nvme_subsystem {
 	struct list_head ns_list;
 };
 
-struct nvme_topology {
+struct nvme_host {
+	struct list_head topology_entry;
+	struct nvme_topology *topology;
+
+	char *hostnqn;
+	char *hostid;
 	struct list_head subsys_list;
+};
+
+struct nvme_topology {
+	struct list_head host_list;
 };
 
 #define SYS_NVME "/sys/class/nvme"
@@ -130,6 +138,7 @@ int scan_ctrls_filter(const struct dirent *d);
 int scan_subsys_filter(const struct dirent *d);
 int scan_dev_filter(const struct dirent *d);
 
+struct nvme_host *alloc_default_host(struct nvme_topology *t);
 int scan_subsystems(struct nvme_topology *t, const char *subsysnqn,
 		    __u32 ns_instance, int nsid, char *dev_dir);
 void free_topology(struct nvme_topology *t);
@@ -139,6 +148,8 @@ char *nvme_get_ctrl_attr(const char *path, const char *attr);
 void *nvme_alloc(size_t len, bool *huge);
 void nvme_free(void *p, bool huge);
 
+char *nvme_hostnqn_read(void);
+char *nvme_hostid_read(void);
 int uuid_from_dmi(char *uuid);
 int uuid_from_systemd(char *uuid);
 

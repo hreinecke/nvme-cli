@@ -1750,7 +1750,7 @@ static int list_subsys(int argc, char **argv, struct command *cmd,
 		OPT_END()
 	};
 
-	INIT_LIST_HEAD(&t.subsys_list);
+	INIT_LIST_HEAD(&t.host_list);
 
 	err = argconfig_parse(argc, argv, desc, opts);
 	if (err < 0)
@@ -1847,7 +1847,7 @@ static int list(int argc, char **argv, struct command *cmd, struct plugin *plugi
 		OPT_END()
 	};
 
-	INIT_LIST_HEAD(&t.subsys_list);
+	INIT_LIST_HEAD(&t.host_list);
 
 	err = argconfig_parse(argc, argv, desc, opts);
 	if (err < 0)
@@ -5608,7 +5608,7 @@ static int show_hostnqn_cmd(int argc, char **argv, struct command *command, stru
 {
 	char *hostnqn;
 
-	hostnqn = hostnqn_read();
+	hostnqn = nvme_hostnqn_read();
 	if (hostnqn) {
 		fputs(hostnqn, stdout);
 		free(hostnqn);

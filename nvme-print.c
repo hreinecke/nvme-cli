@@ -1795,17 +1795,16 @@ static void nvme_show_subsystem(struct nvme_subsystem *s)
 	}
 }
 
-static void json_print_nvme_subsystem_list(struct nvme_topology *t)
+static void json_print_nvme_subsystem_list(struct json_object *root,
+					   struct nvme_host *h)
 {
 	struct json_object *subsystem_attrs, *path_attrs;
 	struct json_object *subsystems, *paths;
-	struct json_object *root;
 	struct nvme_subsystem *s;
 
-	root = json_create_object();
 	subsystems = json_create_array();
 
-	list_for_each_entry(s, &t->subsys_list, topology_entry) {
+	list_for_each_entry(s, &h->subsys_list, host_entry) {
 		struct nvme_ctrl *c;
 
 		subsystem_attrs = json_create_object();
@@ -1840,23 +1839,32 @@ static void json_print_nvme_subsystem_list(struct nvme_topology *t)
 				paths);
 	}
 
-	if (!list_empty(&t->subsys_list))
+	if (!list_empty(&h->subsys_list))
 		json_object_add_value_array(root, "Subsystems", subsystems);
-	json_print_object(root, NULL);
-	printf("\n");
-	json_free_object(root);
 }
 
 void nvme_show_subsystem_list(struct nvme_topology *t,
 			      enum nvme_print_flags flags)
 {
-	struct nvme_subsystem *s;
+	struct nvme_host *h;
 
-	if (flags & JSON)
-		return json_print_nvme_subsystem_list(t);
+	if (flags & JSON) {
+		struct json_object *root;
 
-	list_for_each_entry(s, &t->subsys_list, topology_entry)
-		nvme_show_subsystem(s);
+		root = json_create_object();
+		list_for_each_entry(h, &t->host_list, topology_entry)
+			json_print_nvme_subsystem_list(root, h);
+		json_print_object(root, NULL);
+		printf("\n");
+		json_free_object(root);
+	}
+
+	list_for_each_entry(h, &t->host_list, topology_entry) {
+		struct nvme_subsystem *s;
+
+		list_for_each_entry(s, &h->subsys_list, host_entry)
+			nvme_show_subsystem(s);
+	}
 }
 
 static void nvme_show_registers_cap(struct nvme_bar_cap *cap)
@@ -2550,6 +2558,7 @@ void nvme_show_relatives(const char *name)
 
 	if (block) {
 		struct nvme_topology t = { };
+		struct nvme_host *h;
 		struct nvme_subsystem *s;
 		struct nvme_ctrl *c;
 		char *subsysnqn;
@@ -2561,15 +2570,22 @@ void nvme_show_relatives(const char *name)
 			free(path);
 			return;
 		}
-		INIT_LIST_HEAD(&t.subsys_list);
+		INIT_LIST_HEAD(&t.host_list);
 		err = scan_subsystems(&t, subsysnqn, 0, 0, NULL);
-		if (err || !list_is_singular(&t.subsys_list)) {
+		if (err || !list_is_singular(&t.host_list)) {
 			free(subsysnqn);
 			free(path);
 			return;
 		}
-		s = list_first_entry(&t.subsys_list, struct nvme_subsystem,
+		h = list_first_entry(&t.host_list, struct nvme_host,
 				     topology_entry);
+		if (!list_is_singular(&h->subsys_list)) {
+			free(subsysnqn);
+			free(path);
+			return;
+		}
+		s = list_first_entry(&h->subsys_list, struct nvme_subsystem,
+				     host_entry);
 		fprintf(stderr, "Namespace %s has parent controller(s):", name);
 		list_for_each_entry(c, &s->ctrl_list, subsys_entry) {
 			fprintf(stderr, "%s%s", comma ? ", " : "", c->name);
@@ -5735,24 +5751,28 @@ static void nvme_show_list_item(struct nvme_namespace *n)
 
 static void nvme_show_simple_list(struct nvme_topology *t)
 {
-	struct nvme_subsystem *s;
+	struct nvme_host *h;
 
 	printf("%-21s %-20s %-40s %-9s %-26s %-16s %-8s\n",
 	    "Node", "SN", "Model", "Namespace", "Usage", "Format", "FW Rev");
 	printf("%-.21s %-.20s %-.40s %-.9s %-.26s %-.16s %-.8s\n", dash, dash,
 		dash, dash, dash, dash, dash);
 
-	list_for_each_entry(s, &t->subsys_list, topology_entry) {
-		struct nvme_ctrl *c;
-		struct nvme_namespace *n;
+	list_for_each_entry(h, &t->host_list, topology_entry) {
+		struct nvme_subsystem *s;
 
-		list_for_each_entry(c, &s->ctrl_list, subsys_entry) {
-			list_for_each_entry(n, &c->ns_list, ctrl_entry)
+		list_for_each_entry(s, &h->subsys_list, host_entry) {
+			struct nvme_ctrl *c;
+			struct nvme_namespace *n;
+
+			list_for_each_entry(c, &s->ctrl_list, subsys_entry) {
+				list_for_each_entry(n, &c->ns_list, ctrl_entry)
+					nvme_show_list_item(n);
+			}
+
+			list_for_each_entry(n, &s->ns_list, subsys_entry)
 				nvme_show_list_item(n);
 		}
-
-		list_for_each_entry(n, &s->ns_list, subsys_entry)
-			nvme_show_list_item(n);
 	}
 }
 
@@ -5798,67 +5818,82 @@ static void nvme_show_details_ns(struct nvme_namespace *n, bool ctrl)
 	printf("\n");
 }
 
+static void nvme_show_detailed_ctrl(struct nvme_subsystem *s)
+{
+	struct nvme_ctrl *c;
+
+	list_for_each_entry(c, &s->ctrl_list, subsys_entry) {
+		struct nvme_namespace *n;
+		bool comma = false;
+
+		printf("%-8s %-.20s %-.40s %-.8s %-6s %-14s %-12s ",
+		       c->name, c->id.sn, c->id.mn, c->id.fr,
+		       c->transport ? : "", c->address ? : "", s->name);
+
+		list_for_each_entry(n, &c->ns_list, ctrl_entry) {
+			printf("%s%s", comma ? ", " : "", n->name);
+			comma = true;
+		}
+		printf("\n");
+	}
+}
+
+static void nvme_show_detailed_subsys_ns(struct nvme_subsystem *s)
+{
+	struct nvme_namespace *n;
+
+	if (!list_empty(&s->ns_list)) {
+		list_for_each_entry(n, &s->ns_list, subsys_entry)
+			nvme_show_details_ns(n, false);
+	} else {
+		struct nvme_ctrl *c;
+
+		list_for_each_entry(c, &s->ctrl_list, subsys_entry) {
+			list_for_each_entry(n, &c->ns_list, ctrl_entry)
+				nvme_show_details_ns(n, true);
+		}
+	}
+}
+
 static void nvme_show_detailed_list(struct nvme_topology *t)
 {
+	struct nvme_host *h;
 	struct nvme_subsystem *s;
 	bool first = true;
 
 	printf("NVM Express Subsystems\n\n");
 	printf("%-16s %-96s %-.16s\n", "Subsystem", "Subsystem-NQN", "Controllers");
 	printf("%-.16s %-.96s %-.16s\n", dash, dash, dash);
-	list_for_each_entry(s, &t->subsys_list, topology_entry) {
-		struct nvme_ctrl *c;
+	list_for_each_entry(h, &t->host_list, topology_entry) {
+		list_for_each_entry(s, &h->subsys_list, host_entry) {
+			struct nvme_ctrl *c;
 
-		printf("%-16s %-96s ", s->name, s->subsysnqn);
-		list_for_each_entry(c, &s->ctrl_list, subsys_entry) {
-			printf("%s%s", first ? "" : ", ", c->name);
-			first = false;
+			printf("%-16s %-96s ", s->name, s->subsysnqn);
+			list_for_each_entry(c, &s->ctrl_list, subsys_entry) {
+				printf("%s%s", first ? "" : ", ", c->name);
+				first = false;
+			}
+			printf("\n");
 		}
-		printf("\n");
-	};
+	}
 
 	printf("\nNVM Express Controllers\n\n");
 	printf("%-8s %-20s %-40s %-8s %-6s %-14s %-12s %-16s\n", "Device",
 		"SN", "MN", "FR", "TxPort", "Address", "Subsystem", "Namespaces");
 	printf("%-.8s %-.20s %-.40s %-.8s %-.6s %-.14s %-.12s %-.16s\n", dash, dash,
 		dash, dash, dash, dash, dash, dash);
-	list_for_each_entry(s, &t->subsys_list, topology_entry) {
-		struct nvme_ctrl *c;
-
-		list_for_each_entry(c, &s->ctrl_list, subsys_entry) {
-			struct nvme_namespace *n;
-			bool comma = false;
-
-			printf("%-8s %-.20s %-.40s %-.8s %-6s %-14s %-12s ",
-				c->name, c->id.sn, c->id.mn, c->id.fr,
-				c->transport ? : "", c->address ? : "", s->name);
-
-			list_for_each_entry(n, &c->ns_list, ctrl_entry) {
-				printf("%s%s", comma ? ", " : "", n->name);
-				comma = true;
-			}
-			printf("\n");
-		}
+	list_for_each_entry(h, &t->host_list, topology_entry) {
+		list_for_each_entry(s, &h->subsys_list, host_entry)
+			nvme_show_detailed_ctrl(s);
 	}
 
 	printf("\nNVM Express Namespaces\n\n");
 	printf("%-12s %-8s %-26s %-16s %-16s\n", "Device", "NSID", "Usage", "Format", "Controllers");
 	printf("%-.12s %-.8s %-.26s %-.16s %-.16s\n", dash, dash, dash, dash, dash);
 
-	list_for_each_entry(s, &t->subsys_list, topology_entry) {
-		struct nvme_namespace *n;
-
-		if (!list_empty(&s->ns_list)) {
-			list_for_each_entry(n, &s->ns_list, subsys_entry)
-				nvme_show_details_ns(n, false);
-		} else {
-			struct nvme_ctrl *c;
-
-			list_for_each_entry(c, &s->ctrl_list, subsys_entry) {
-				list_for_each_entry(n, &c->ns_list, ctrl_entry)
-					nvme_show_details_ns(n, true);
-			}
-		}
+	list_for_each_entry(h, &t->host_list, topology_entry) {
+		list_for_each_entry(s, &h->subsys_list, host_entry)
+			nvme_show_detailed_subsys_ns(s);
 	}
 }
 
@@ -5881,82 +5916,100 @@ static void json_detail_ns(struct nvme_namespace *n, struct json_object *ns_attr
 	json_object_add_value_uint(ns_attrs, "SectorSize", lba);
 }
 
-static void json_detail_list(struct nvme_topology *t)
+static void json_detail_subsys_list(struct json_object *devices,
+				    struct nvme_subsystem *s)
 {
-	struct json_object *root;
-	struct json_object *devices;
-	struct nvme_subsystem *s;
+	struct nvme_ctrl *c;
+	struct nvme_namespace *n;
+	struct json_object *subsys_attrs;
+	struct json_object *namespaces, *ctrls;
 	char formatter[41] = { 0 };
 
-	root = json_create_object();
-	devices = json_create_array();
+	subsys_attrs = json_create_object();
+	json_object_add_value_string(subsys_attrs, "Subsystem", s->name);
+	json_object_add_value_string(subsys_attrs, "SubsystemNQN", s->subsysnqn);
 
-	list_for_each_entry(s, &t->subsys_list, topology_entry) {
-		struct nvme_ctrl *c;
-		struct nvme_namespace *n;
-		struct json_object *subsys_attrs;
-		struct json_object *namespaces, *ctrls;
+	ctrls = json_create_array();
+	json_object_add_value_array(subsys_attrs, "Controllers", ctrls);
+	list_for_each_entry(c, &s->ctrl_list, subsys_entry) {
+		struct json_object *ctrl_attrs = json_create_object();
+		struct json_object *namespaces;
 
-		subsys_attrs = json_create_object();
-		json_object_add_value_string(subsys_attrs, "Subsystem", s->name);
-		json_object_add_value_string(subsys_attrs, "SubsystemNQN", s->subsysnqn);
+		json_object_add_value_string(ctrl_attrs, "Controller", c->name);
+		if (c->transport)
+			json_object_add_value_string(ctrl_attrs, "Transport",
+						     c->transport);
+		if (c->address)
+			json_object_add_value_string(ctrl_attrs, "Address",
+						     c->address);
+		if (c->state)
+			json_object_add_value_string(ctrl_attrs, "State",
+						     c->state);
+		if (s->host->hostnqn)
+			json_object_add_value_string(ctrl_attrs, "HostNQN",
+						     s->host->hostnqn);
+		if (s->host->hostid)
+			json_object_add_value_string(ctrl_attrs, "HostID",
+						     s->host->hostid);
 
-		ctrls = json_create_array();
-		json_object_add_value_array(subsys_attrs, "Controllers", ctrls);
-		list_for_each_entry(c, &s->ctrl_list, subsys_entry) {
-			struct json_object *ctrl_attrs = json_create_object();
-			struct json_object *namespaces;
+		format(formatter, sizeof(formatter), c->id.fr, sizeof(c->id.fr));
+		json_object_add_value_string(ctrl_attrs, "Firmware",
+					     formatter);
 
-			json_object_add_value_string(ctrl_attrs, "Controller", c->name);
-			if (c->transport)
-				json_object_add_value_string(ctrl_attrs, "Transport", c->transport);
-			if (c->address)
-				json_object_add_value_string(ctrl_attrs, "Address", c->address);
-			if (c->state)
-				json_object_add_value_string(ctrl_attrs, "State", c->state);
-			if (c->hostnqn)
-				json_object_add_value_string(ctrl_attrs, "HostNQN", c->hostnqn);
-			if (c->hostid)
-				json_object_add_value_string(ctrl_attrs, "HostID", c->hostid);
+		format(formatter, sizeof(formatter), c->id.mn, sizeof(c->id.mn));
+		json_object_add_value_string(ctrl_attrs, "ModelNumber",
+					     formatter);
 
-			format(formatter, sizeof(formatter), c->id.fr, sizeof(c->id.fr));
-			json_object_add_value_string(ctrl_attrs, "Firmware", formatter);
-
-			format(formatter, sizeof(formatter), c->id.mn, sizeof(c->id.mn));
-			json_object_add_value_string(ctrl_attrs, "ModelNumber", formatter);
-
-			format(formatter, sizeof(formatter), c->id.sn, sizeof(c->id.sn));
-			json_object_add_value_string(ctrl_attrs, "SerialNumber", formatter);
-
-			namespaces = json_create_array();
-
-			list_for_each_entry(n, &c->ns_list, ctrl_entry) {
-				struct json_object *ns_attrs = json_create_object();
-
-				json_detail_ns(n, ns_attrs);
-				json_array_add_value_object(namespaces, ns_attrs);
-			}
-			if (!list_empty(&c->ns_list))
-				json_object_add_value_array(ctrl_attrs, "Namespaces", namespaces);
-			else
-				json_free_array(namespaces);
-
-			json_array_add_value_object(ctrls, ctrl_attrs);
-		}
+		format(formatter, sizeof(formatter), c->id.sn, sizeof(c->id.sn));
+		json_object_add_value_string(ctrl_attrs, "SerialNumber",
+					     formatter);
 
 		namespaces = json_create_array();
-		list_for_each_entry(n, &s->ns_list, subsys_entry) {
+
+		list_for_each_entry(n, &c->ns_list, ctrl_entry) {
 			struct json_object *ns_attrs = json_create_object();
 
 			json_detail_ns(n, ns_attrs);
 			json_array_add_value_object(namespaces, ns_attrs);
 		}
-		if (!list_empty(&s->ns_list))
-			json_object_add_value_array(subsys_attrs, "Namespaces", namespaces);
+		if (!list_empty(&c->ns_list))
+			json_object_add_value_array(ctrl_attrs, "Namespaces",
+						    namespaces);
 		else
 			json_free_array(namespaces);
 
-		json_array_add_value_object(devices, subsys_attrs);
+		json_array_add_value_object(ctrls, ctrl_attrs);
+	}
+
+	namespaces = json_create_array();
+	list_for_each_entry(n, &s->ns_list, subsys_entry) {
+		struct json_object *ns_attrs = json_create_object();
+
+		json_detail_ns(n, ns_attrs);
+		json_array_add_value_object(namespaces, ns_attrs);
+	}
+	if (!list_empty(&s->ns_list))
+		json_object_add_value_array(subsys_attrs, "Namespaces",
+					    namespaces);
+	else
+		json_free_array(namespaces);
+
+	json_array_add_value_object(devices, subsys_attrs);
+}
+
+static void json_detail_list(struct nvme_topology *t)
+{
+	struct json_object *root;
+	struct json_object *devices;
+	struct nvme_host *h;
+	struct nvme_subsystem *s;
+
+	root = json_create_object();
+	devices = json_create_array();
+
+	list_for_each_entry(h, &t->host_list, topology_entry) {
+		list_for_each_entry(s, &h->subsys_list, host_entry)
+			json_detail_subsys_list(devices, s);
 	}
 
 	json_object_add_value_array(root, "Devices", devices);
@@ -6028,21 +6081,25 @@ static void json_simple_list(struct nvme_topology *t)
 {
 	struct json_object *root;
 	struct json_object *devices;
-	struct nvme_subsystem *s;
+	struct nvme_host *h;
 
 	root = json_create_object();
 	devices = json_create_array();
-	list_for_each_entry(s, &t->subsys_list, topology_entry) {
-		struct nvme_ctrl *c;
-		struct nvme_namespace *n;
+	list_for_each_entry(h, &t->host_list, topology_entry) {
+		struct nvme_subsystem *s;
 
-		list_for_each_entry(c, &s->ctrl_list, subsys_entry) {
-			list_for_each_entry(n, &c->ns_list, ctrl_entry)
+		list_for_each_entry(s, &h->subsys_list, host_entry) {
+			struct nvme_ctrl *c;
+			struct nvme_namespace *n;
+
+			list_for_each_entry(c, &s->ctrl_list, subsys_entry) {
+				list_for_each_entry(n, &c->ns_list, ctrl_entry)
+					json_simple_ns(n, devices);
+			}
+
+			list_for_each_entry(n, &s->ns_list, subsys_entry)
 				json_simple_ns(n, devices);
 		}
-
-		list_for_each_entry(n, &s->ns_list, subsys_entry)
-			json_simple_ns(n, devices);
 	}
 	json_object_add_value_array(root, "Devices", devices);
 	json_print_object(root, NULL);

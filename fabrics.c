@@ -928,7 +928,7 @@ static char *hostnqn_read_dmi(void)
 }
 
 /* returns an allocated string or NULL */
-char *hostnqn_read(void)
+char *nvme_hostnqn_read(void)
 {
 	char *ret;
 
@@ -949,32 +949,31 @@ char *hostnqn_read(void)
 
 static int nvmf_hostnqn_file(struct host_config *cfg)
 {
-	cfg->hostnqn = hostnqn_read();
+	cfg->hostnqn = nvme_hostnqn_read();
 
 	return cfg->hostnqn != NULL;
 }
 
-static int nvmf_hostid_file(struct host_config *cfg)
+char *nvme_hostid_read(void)
 {
 	FILE *f;
 	char hostid[NVMF_HOSTID_SIZE + 1];
-	int ret = false;
 
 	f = fopen(PATH_NVMF_HOSTID, "r");
 	if (f == NULL)
-		return false;
+		return NULL;
 
 	if (fgets(hostid, sizeof(hostid), f) == NULL)
-		goto out;
+		hostid[0] = '\0';
 
-	cfg->hostid = strdup(hostid);
-	if (!cfg->hostid)
-		goto out;
-
-	ret = true;
-out:
 	fclose(f);
-	return ret;
+	return strlen(hostid) ? strdup(hostid) : NULL;
+}
+
+static int nvmf_hostid_file(struct host_config *cfg)
+{
+	cfg->hostid = nvme_hostid_read();
+	return !!cfg->hostid;
 }
 
 static int
@@ -2087,6 +2086,7 @@ out:
 int fabrics_disconnect_all(const char *desc, int argc, char **argv)
 {
 	struct nvme_topology t = { };
+	struct nvme_host *h;
 	struct nvme_subsystem *s;
 	int err;
 
@@ -2094,7 +2094,8 @@ int fabrics_disconnect_all(const char *desc, int argc, char **argv)
 		OPT_END()
 	};
 
-	INIT_LIST_HEAD(&t.subsys_list);
+	INIT_LIST_HEAD(&t.host_list);
+	alloc_default_host(&t);
 
 	err = argconfig_parse(argc, argv, desc, opts);
 	if (err)
@@ -2106,15 +2107,18 @@ int fabrics_disconnect_all(const char *desc, int argc, char **argv)
 		goto out;
 	}
 
-	list_for_each_entry(s, &t.subsys_list, topology_entry) {
-		struct nvme_ctrl *c;
+	list_for_each_entry(h, &t.host_list, topology_entry) {
+		list_for_each_entry(s, &h->subsys_list, host_entry) {
+			struct nvme_ctrl *c;
 
-		list_for_each_entry(c, &s->ctrl_list, subsys_entry) {
-			if (!c->transport || !strcmp(c->transport, "pcie"))
-				continue;
-			err = disconnect_by_device(c->name);
-			if (err)
-				goto free;
+			list_for_each_entry(c, &s->ctrl_list, subsys_entry) {
+				if (!c->transport ||
+				    !strcmp(c->transport, "pcie"))
+					continue;
+				err = disconnect_by_device(c->name);
+				if (err)
+					goto free;
+			}
 		}
 	}
 free:

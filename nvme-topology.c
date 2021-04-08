@@ -311,7 +311,7 @@ static struct nvme_ctrl *alloc_ctrl(struct nvme_subsystem *s,
 	return c;
 }
 
-static struct nvme_subsystem *alloc_subsys(struct nvme_topology *t,
+static struct nvme_subsystem *alloc_subsys(struct nvme_host *h,
 					   const char *name)
 {
 	struct nvme_subsystem *s = calloc(1, sizeof(*s));
@@ -319,7 +319,7 @@ static struct nvme_subsystem *alloc_subsys(struct nvme_topology *t,
 	if (!s)
 		return NULL;
 
-	INIT_LIST_HEAD(&s->topology_entry);
+	INIT_LIST_HEAD(&s->host_entry);
 	INIT_LIST_HEAD(&s->ctrl_list);
 	INIT_LIST_HEAD(&s->ns_list);
 	s->name = strdup(name);
@@ -327,26 +327,93 @@ static struct nvme_subsystem *alloc_subsys(struct nvme_topology *t,
 		free(s);
 		return NULL;
 	}
-	list_add(&s->topology_entry, &t->subsys_list);
+	s->host = h;
+	list_add(&s->host_entry, &h->subsys_list);
 	return s;
+}
+
+static struct nvme_host *alloc_host(struct nvme_topology *t,
+				    const char *nqn, const char *id)
+{
+	struct nvme_host *h;
+
+	list_for_each_entry(h, &t->host_list, topology_entry) {
+		if (strcmp(h->hostnqn, nqn))
+			continue;
+		if (!h->hostid) {
+			if (id)
+				continue;
+		} else {
+			if (!id)
+				continue;
+			if (strcmp(h->hostid, id))
+				continue;
+		}
+		return h;
+	}
+	h = calloc(1, sizeof(*h));
+	if (!h)
+		return NULL;
+
+	INIT_LIST_HEAD(&h->topology_entry);
+	INIT_LIST_HEAD(&h->subsys_list);
+	h->hostnqn = strdup(nqn);
+	if (!h->hostnqn) {
+		free(h);
+		return NULL;
+	}
+	if (id)
+		h->hostid = strdup(id);
+	list_add(&h->topology_entry, &t->host_list);
+	return h;
+}
+
+struct nvme_host *alloc_default_host(struct nvme_topology *t)
+{
+	char *hostnqn = nvme_hostnqn_read();
+	char *hostid = nvme_hostid_read();
+	struct nvme_host *h;
+
+	h = alloc_host(t, hostnqn, hostid);
+	free(hostnqn);
+	free(hostid);
+
+	return h;
 }
 
 static int scan_ctrl(struct nvme_ctrl *c, char *p, __u32 ns_instance)
 {
 	struct nvme_namespace *n;
 	struct dirent **ns;
-	char *path;
+	char *path, *hostnqn, *hostid;
 	int i, fd, ret;
 
 	ret = asprintf(&path, "%s/%s", p, c->name);
 	if (ret < 0)
 		return ret;
 
+	hostnqn = nvme_get_ctrl_attr(path, "hostnqn");
+	hostid = nvme_get_ctrl_attr(path, "hostid");
+	if (strcmp(c->subsys->host->hostnqn, hostnqn)) {
+		struct nvme_topology *t = c->subsys->host->topology;
+		struct nvme_host *h;
+		struct nvme_subsystem *s;
+		const char *subsysname = c->subsys->name;
+		const char *subsysnqn = c->subsys->subsysnqn;
+
+		h = alloc_host(t, hostnqn, hostid);
+		if (!h)
+			return -ENOMEM;
+		s = alloc_subsys(h, subsysname);
+		if (!s)
+			return -ENOMEM;
+		s->subsysnqn = strdup(subsysnqn);
+		list_del_init(&c->subsys_entry);
+		list_add(&c->subsys_entry, &s->ctrl_list);
+	}
 	c->address = nvme_get_ctrl_attr(path, "address");
 	c->transport = nvme_get_ctrl_attr(path, "transport");
 	c->state = nvme_get_ctrl_attr(path, "state");
-	c->hostnqn = nvme_get_ctrl_attr(path, "hostnqn");
-	c->hostid = nvme_get_ctrl_attr(path, "hostid");
 
 	if (ns_instance)
 		c->ana_state = get_nvme_ctrl_path_ana_state(path, ns_instance);
@@ -510,7 +577,7 @@ static int verify_legacy_ns(struct nvme_namespace *n)
  * is the controller to nvme0n1 for such older kernels. We will also assume
  * every controller is its own subsystem.
  */
-static int legacy_list(struct nvme_topology *t, char *dev_dir)
+static int legacy_list(struct nvme_host *h, char *dev_dir)
 {
 	struct nvme_ctrl *c;
 	struct nvme_subsystem *s;
@@ -528,7 +595,7 @@ static int legacy_list(struct nvme_topology *t, char *dev_dir)
 	for (i = 0; i < ret; i++) {\
 		int nret, j;
 
-		s = alloc_subsys(t, devices[i]->d_name);
+		s = alloc_subsys(h, devices[i]->d_name);
 		if (!s)
 			continue;
 
@@ -590,8 +657,6 @@ static void free_ctrl(struct nvme_ctrl *c)
 	free(c->transport);
 	free(c->address);
 	free(c->state);
-	free(c->hostnqn);
-	free(c->hostid);
 	free(c->ana_state);
 	free(c);
 }
@@ -609,28 +674,51 @@ static void free_subsystem(struct nvme_subsystem *s)
 		free(n);
 	}
 
-	list_del_init(&s->topology_entry);
+	list_del_init(&s->host_entry);
 	free(s->name);
 	free(s->subsysnqn);
 	free(s);
 }
 
+static void free_host(struct nvme_host *h)
+{
+	struct nvme_subsystem *s, *tmp_s;
+
+	list_for_each_entry_safe(s, tmp_s, &h->subsys_list, host_entry)
+		free_subsystem(s);
+	list_del_init(&h->topology_entry);
+	free(h->hostnqn);
+	if (h->hostid)
+		free(h->hostid);
+	free(h);
+}
+
+void free_topology(struct nvme_topology *t)
+{
+	struct nvme_host *h, *tmp_h;
+
+	list_for_each_entry_safe(h, tmp_h, &t->host_list, topology_entry)
+		free_host(h);
+}
+
 int scan_subsystems(struct nvme_topology *t, const char *subsysnqn,
 		    __u32 ns_instance, int nsid, char *dev_dir)
 {
+	struct nvme_host *h;
 	struct nvme_subsystem *s;
 	struct dirent **subsys;
 	int ret = 0, i;
 
+	h = alloc_default_host(t);
 	ret = scandir(subsys_dir, &subsys, scan_subsys_filter,
 		      alphasort);
 	if (ret < 0) {
-		ret = legacy_list(t, (char *)dev);
+		ret = legacy_list(h, (char *)dev);
 		if (ret != 0)
 			return ret;
 	} else {
 		for (i = 0; i < ret; i++) {
-			s = alloc_subsys(t, subsys[i]->d_name);
+			s = alloc_subsys(h, subsys[i]->d_name);
 			if (!s)
 				continue;
 			scan_subsystem(s, ns_instance, nsid);
@@ -644,18 +732,10 @@ int scan_subsystems(struct nvme_topology *t, const char *subsysnqn,
 	}
 
 	if (dev_dir != NULL && strcmp(dev_dir, "/dev/")) {
-		ret = legacy_list(t, dev_dir);
+		ret = legacy_list(h, dev_dir);
 	}
 
 	return ret;
-}
-
-void free_topology(struct nvme_topology *t)
-{
-	struct nvme_subsystem *s, *tmp_s;
-
-	list_for_each_entry_safe(s, tmp_s, &t->subsys_list, topology_entry)
-		free_subsystem(s);
 }
 
 char *nvme_char_from_block(char *dev)
