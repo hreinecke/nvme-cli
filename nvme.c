@@ -5521,8 +5521,6 @@ static int admin_passthru(int argc, char **argv, struct command *cmd, struct plu
 #define NVME_HOSTNQN_ID SD_ID128_MAKE(c7,f4,61,81,12,be,49,32,8c,83,10,6f,9d,dd,d8,6b)
 #endif
 
-#define NVMF_HOSTID_SIZE	36
-
 /* default to 600 seconds of reconnect attempts before giving up */
 #define NVMF_DEF_CTRL_LOSS_TMO		600
 #define PATH_NVMF_DISC		"/etc/nvme/discovery.conf"
