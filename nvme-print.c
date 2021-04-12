@@ -5537,17 +5537,15 @@ static void nvme_show_list_item(nvme_ns_t n)
 	const char *u_suffix = suffix_si_get(&nuse);
 	const char *l_suffix = suffix_binary_get(&lba);
 
-	nvme_ctrl_t c = nvme_ns_get_ctrl(n);
-
 	snprintf(usage, sizeof(usage), "%6.2f %2sB / %6.2f %2sB", nuse,
 		u_suffix, nsze, s_suffix);
 	snprintf(format, sizeof(format), "%3.0f %2sB + %2d B", (double)lba,
 		l_suffix, nvme_ns_get_meta_size(n));
 
 	printf("%-21s %-20s %-40s %-9d %-26s %-16s %-8s\n",
-		nvme_ns_get_name(n), nvme_ctrl_get_serial(c),
-		nvme_ctrl_get_model(c), nvme_ns_get_nsid(n), usage, format,
-		nvme_ctrl_get_firmware(c));
+		nvme_ns_get_name(n), nvme_ns_get_serial(n),
+		nvme_ns_get_model(n), nvme_ns_get_nsid(n), usage, format,
+		nvme_ns_get_firmware(n));
 }
 
 static void nvme_show_simple_list(nvme_root_t r)
@@ -5786,7 +5784,6 @@ static void json_detail_list(nvme_root_t r)
 static struct json_object *json_list_item(nvme_ns_t n)
 {
 	struct json_object *jdevice = json_create_object();
-	nvme_ctrl_t c = nvme_ns_get_ctrl(n);
 
 	long long lba = nvme_ns_get_lba_size(n);
 	double nsze = nvme_ns_get_lba_count(n) * lba;
@@ -5794,9 +5791,9 @@ static struct json_object *json_list_item(nvme_ns_t n)
 
 	json_object_add_value_int(jdevice, "namespace", nvme_ns_get_nsid(n));
 	json_object_add_value_string(jdevice, "device", nvme_ns_get_name(n));
-	json_object_add_value_string(jdevice, "firmware", nvme_ctrl_get_firmware(c));
-	json_object_add_value_string(jdevice, "model", nvme_ctrl_get_model(c));
-	json_object_add_value_string(jdevice, "serial", nvme_ctrl_get_serial(c));
+	json_object_add_value_string(jdevice, "firmware", nvme_ns_get_firmware(n));
+	json_object_add_value_string(jdevice, "model", nvme_ns_get_model(n));
+	json_object_add_value_string(jdevice, "serial", nvme_ns_get_serial(n));
 	json_object_add_value_int(jdevice, "util", nuse);
 	json_object_add_value_int(jdevice, "maxlba", nvme_ns_get_lba_count(n));
 	json_object_add_value_int(jdevice, "capacity", nsze);
