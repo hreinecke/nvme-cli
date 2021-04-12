@@ -7,11 +7,11 @@
 #include <inttypes.h>
 #include <stdbool.h>
 
-#include "linux/nvme_ioctl.h"
 #include "nvme.h"
 #include "nvme-print.h"
 #include "plugin.h"
 
+#include <sys/ioctl.h>
 #define CREATE_CMD
 #include "toshiba-nvme.h"
 

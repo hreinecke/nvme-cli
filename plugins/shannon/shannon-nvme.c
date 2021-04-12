@@ -5,13 +5,12 @@
 #include <unistd.h>
 #include <inttypes.h>
 
-#include "linux/nvme_ioctl.h"
-
 #include "common.h"
 #include "nvme.h"
 #include "nvme-print.h"
 #include "plugin.h"
 
+#include <sys/ioctl.h>
 #define CREATE_CMD
 #include "shannon-nvme.h"
 
