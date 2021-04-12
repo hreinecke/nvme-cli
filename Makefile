@@ -17,7 +17,8 @@ UDEVDIR ?= $(SYSCONFDIR)/udev
 UDEVRULESDIR ?= $(UDEVDIR)/rules.d
 DRACUTDIR ?= $(LIBDIR)/dracut
 LIBNVMEDIR = libnvme/
-LDFLAGS ?= -L$(LIBNVMEDIR)src/ -I$(LIBNVMEDIR)src/ -lnvme
+override LDFLAGS += -L$(LIBNVMEDIR)src/ -lnvme
+override CFLAGS += -I$(LIBNVMEDIR)src/
 
 LIB_DEPENDS =
 
