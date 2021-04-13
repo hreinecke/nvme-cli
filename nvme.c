@@ -5953,7 +5953,7 @@ static int discover_from_conf_file(nvme_host_t h, const char *desc,
 		if (!c)
 			goto next;
 		errno = 0;
-		ret = nvmf_add_ctrl(c, &cfg);
+		ret = nvmf_add_ctrl(c, &cfg, false);
 		if (ret < 0) {
 			/* Ignore errors from discovery */
 			nvmf_discover(c, defcfg, connect, 0);
@@ -6045,7 +6045,7 @@ int discover(const char *desc, int argc, char **argv, bool connect)
 		tmp_device = nvme_ctrl_get_name(c);
 		if (!tmp_device) {
 			errno = 0;
-			ret = nvmf_add_ctrl(c, &cfg);
+			ret = nvmf_add_ctrl(c, &cfg, false);
 		} else if (strcmp(tmp_device, device)) {
 			device = NULL;
 			ret = 0;
