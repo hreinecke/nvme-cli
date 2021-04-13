@@ -5980,8 +5980,8 @@ static int discover_from_conf_file(const char *desc, bool connect,
 		errno = 0;
 		c = nvmf_add_ctrl(&cfg);
 		if (c) {
+			/* Ignore errors from discovery */
 			nvmf_discover(c, defcfg, connect, 0);
-				return 0;
 			if (!persistent)
 				ret = nvme_ctrl_disconnect(c);
 			nvme_free_ctrl(c);
