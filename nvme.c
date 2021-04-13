@@ -5532,7 +5532,6 @@ static int admin_passthru(int argc, char **argv, struct command *cmd, struct plu
 
 /* Name of file to output log pages in their raw format */
 static char *raw;
-static bool persistent;
 static bool quiet;
 
 static const char *nvmf_tport		= "transport type";
@@ -6119,7 +6118,7 @@ static int nvmf_discover(nvme_ctrl_t c, const struct nvme_fabrics_config *defcfg
 			if (child) {
 				if (discover)
 					nvmf_discover(child, defcfg, true, flags);
-				if (!persistent)
+				if (!nvme_ctrl_is_persistent(c))
 					nvme_ctrl_disconnect(c);
 				nvme_free_ctrl(child);
 			} else if (errno == EALREADY && !quiet) {
@@ -6198,7 +6197,7 @@ static int discover_from_conf_file(nvme_host_t h, const char *desc,
 		if (ret < 0) {
 			/* Ignore errors from discovery */
 			nvmf_discover(c, defcfg, connect, 0);
-			if (!persistent)
+			if (!nvme_ctrl_is_persistent(c))
 				ret = nvme_ctrl_disconnect(c);
 			nvme_free_ctrl(c);
 		}
@@ -6245,7 +6244,7 @@ int discover(const char *desc, int argc, char **argv, bool connect)
 		NVMF_OPTS(cfg),
 		OPT_FMT("output-format", 'o', &format,        output_format),
 		OPT_FILE("raw",          'r', &raw,           "save raw output to file"),
-		OPT_FLAG("persistent",   'p', &persistent,    "persistent discovery connection"),
+		OPT_FLAG("persistent",   'p', &cfg.persistent,    "persistent discovery connection"),
 		OPT_FLAG("quiet",        'S', &quiet,         "suppress already connected errors"),
 		OPT_STRING("config",     'C', "CONFIG", &config_file,   "JSON configuration file (or 'none' to disable)"),
 		OPT_END()
@@ -6260,7 +6259,7 @@ int discover(const char *desc, int argc, char **argv, bool connect)
 		return ret;
 
 	r = nvme_scan();
-	if (persistent && !cfg.keep_alive_tmo)
+	if (cfg.persistent && !cfg.keep_alive_tmo)
 		cfg.keep_alive_tmo = 30;
 	if (!hostnqn)
 		hostnqn = hnqn = nvmf_hostnqn_from_file();
@@ -6298,7 +6297,7 @@ int discover(const char *desc, int argc, char **argv, bool connect)
 
 		if (!ret) {
 			ret = nvmf_discover(c, &cfg, connect, flags);
-			if (!device && !persistent)
+			if (!device && !nvme_ctrl_is_persistent(c))
 				nvme_ctrl_disconnect(c);
 			nvme_free_ctrl(c);
 		} else {
