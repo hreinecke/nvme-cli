@@ -5610,104 +5610,6 @@ static int show_hostnqn_cmd(int argc, char **argv, struct command *command, stru
 	return 0;
 }
 
-const char *arg_str(const char * const *strings,
-		size_t array_size, size_t idx)
-{
-	if (idx < array_size && strings[idx])
-		return strings[idx];
-	return "unrecognized";
-}
-
-const char * const trtypes[] = {
-	[NVMF_TRTYPE_RDMA]	= "rdma",
-	[NVMF_TRTYPE_FC]	= "fc",
-	[NVMF_TRTYPE_TCP]	= "tcp",
-	[NVMF_TRTYPE_LOOP]	= "loop",
-};
-
-static const char *trtype_str(__u8 trtype)
-{
-	return arg_str(trtypes, ARRAY_SIZE(trtypes), trtype);
-}
-
-static const char * const adrfams[] = {
-	[NVMF_ADDR_FAMILY_PCI]	= "pci",
-	[NVMF_ADDR_FAMILY_IP4]	= "ipv4",
-	[NVMF_ADDR_FAMILY_IP6]	= "ipv6",
-	[NVMF_ADDR_FAMILY_IB]	= "infiniband",
-	[NVMF_ADDR_FAMILY_FC]	= "fibre-channel",
-};
-
-static inline const char *adrfam_str(__u8 adrfam)
-{
-	return arg_str(adrfams, ARRAY_SIZE(adrfams), adrfam);
-}
-
-static const char * const subtypes[] = {
-	[NVME_NQN_DISC]		= "discovery subsystem",
-	[NVME_NQN_NVME]		= "nvme subsystem",
-};
-
-static inline const char *subtype_str(__u8 subtype)
-{
-	return arg_str(subtypes, ARRAY_SIZE(subtypes), subtype);
-}
-
-static const char * const treqs[] = {
-	[NVMF_TREQ_NOT_SPECIFIED]	= "not specified",
-	[NVMF_TREQ_REQUIRED]		= "required",
-	[NVMF_TREQ_NOT_REQUIRED]	= "not required",
-	[NVMF_TREQ_DISABLE_SQFLOW]	= "not specified, "
-					  "sq flow control disable supported",
-};
-
-static inline const char *treq_str(__u8 treq)
-{
-	return arg_str(treqs, ARRAY_SIZE(treqs), treq);
-}
-
-static const char * const sectypes[] = {
-	[NVMF_TCP_SECTYPE_NONE]		= "none",
-	[NVMF_TCP_SECTYPE_TLS]		= "tls",
-};
-
-static inline const char *sectype_str(__u8 sectype)
-{
-	return arg_str(sectypes, ARRAY_SIZE(sectypes), sectype);
-}
-
-static const char * const prtypes[] = {
-	[NVMF_RDMA_PRTYPE_NOT_SPECIFIED]	= "not specified",
-	[NVMF_RDMA_PRTYPE_IB]			= "infiniband",
-	[NVMF_RDMA_PRTYPE_ROCE]			= "roce",
-	[NVMF_RDMA_PRTYPE_ROCEV2]		= "roce-v2",
-	[NVMF_RDMA_PRTYPE_IWARP]		= "iwarp",
-};
-
-static inline const char *prtype_str(__u8 prtype)
-{
-	return arg_str(prtypes, ARRAY_SIZE(prtypes), prtype);
-}
-
-static const char * const qptypes[] = {
-	[NVMF_RDMA_QPTYPE_CONNECTED]	= "connected",
-	[NVMF_RDMA_QPTYPE_DATAGRAM]	= "datagram",
-};
-
-static inline const char *qptype_str(__u8 qptype)
-{
-	return arg_str(qptypes, ARRAY_SIZE(qptypes), qptype);
-}
-
-static const char * const cms[] = {
-	[NVMF_RDMA_CMS_RDMA_CM]	= "rdma-cm",
-};
-
-static const char *cms_str(__u8 cm)
-{
-	return arg_str(cms, ARRAY_SIZE(cms), cm);
-}
-
 static void space_strip_len(int max, char *str)
 {
 	int i;
@@ -5735,10 +5637,10 @@ static void print_discovery_log(struct nvmf_discovery_log *log, int numrec)
 		space_strip_len(NVMF_TRADDR_SIZE, e->traddr);
 
 		printf("=====Discovery Log Entry %d======\n", i);
-		printf("trtype:  %s\n", trtype_str(e->trtype));
-		printf("adrfam:  %s\n", adrfam_str(e->adrfam));
-		printf("subtype: %s\n", subtype_str(e->subtype));
-		printf("treq:    %s\n", treq_str(e->treq));
+		printf("trtype:  %s\n", nvmf_trtype_str(e->trtype));
+		printf("adrfam:  %s\n", nvmf_adrfam_str(e->adrfam));
+		printf("subtype: %s\n", nvmf_subtype_str(e->subtype));
+		printf("treq:    %s\n", nvmf_treq_str(e->treq));
 		printf("portid:  %d\n", e->portid);
 		printf("trsvcid: %s\n", e->trsvcid);
 		printf("subnqn:  %s\n", e->subnqn);
@@ -5747,17 +5649,17 @@ static void print_discovery_log(struct nvmf_discovery_log *log, int numrec)
 		switch (e->trtype) {
 		case NVMF_TRTYPE_RDMA:
 			printf("rdma_prtype: %s\n",
-				prtype_str(e->tsas.rdma.prtype));
+				nvmf_prtype_str(e->tsas.rdma.prtype));
 			printf("rdma_qptype: %s\n",
-				qptype_str(e->tsas.rdma.qptype));
+				nvmf_qptype_str(e->tsas.rdma.qptype));
 			printf("rdma_cms:    %s\n",
-				cms_str(e->tsas.rdma.cms));
+				nvmf_cms_str(e->tsas.rdma.cms));
 			printf("rdma_pkey: 0x%04x\n",
 				e->tsas.rdma.pkey);
 			break;
 		case NVMF_TRTYPE_TCP:
 			printf("sectype: %s\n",
-				sectype_str(e->tsas.tcp.sectype));
+				nvmf_sectype_str(e->tsas.tcp.sectype));
 			break;
 		}
 	}
@@ -5779,13 +5681,13 @@ static void json_discovery_log(struct nvmf_discovery_log *log, int numrec)
 		struct json_object *entry = json_create_object();
 
 		json_object_add_value_string(entry, "trtype",
-					     trtype_str(e->trtype));
+					     nvmf_trtype_str(e->trtype));
 		json_object_add_value_string(entry, "adrfam",
-					     adrfam_str(e->adrfam));
+					     nvmf_adrfam_str(e->adrfam));
 		json_object_add_value_string(entry, "subtype",
-					     subtype_str(e->subtype));
+					     nvmf_subtype_str(e->subtype));
 		json_object_add_value_string(entry,"treq",
-					     treq_str(e->treq));
+					     nvmf_treq_str(e->treq));
 		json_object_add_value_uint(entry, "portid", e->portid);
 		json_object_add_value_string(entry, "trsvcid",
 					     e->trsvcid);
@@ -5795,17 +5697,17 @@ static void json_discovery_log(struct nvmf_discovery_log *log, int numrec)
 		switch (e->trtype) {
 		case NVMF_TRTYPE_RDMA:
 			json_object_add_value_string(entry, "rdma_prtype",
-				prtype_str(e->tsas.rdma.prtype));
+				nvmf_prtype_str(e->tsas.rdma.prtype));
 			json_object_add_value_string(entry, "rdma_qptype",
-				qptype_str(e->tsas.rdma.qptype));
+				nvmf_qptype_str(e->tsas.rdma.qptype));
 			json_object_add_value_string(entry, "rdma_cms",
-				cms_str(e->tsas.rdma.cms));
+				nvmf_cms_str(e->tsas.rdma.cms));
 			json_object_add_value_uint(entry, "rdma_pkey",
 				e->tsas.rdma.pkey);
 			break;
 		case NVMF_TRTYPE_TCP:
 			json_object_add_value_string(entry, "sectype",
-				sectype_str(e->tsas.tcp.sectype));
+				nvmf_sectype_str(e->tsas.tcp.sectype));
 			break;
 		}
 		json_array_add_value_object(entries, entry);
