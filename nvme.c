@@ -6020,8 +6020,8 @@ static int nvmf_discover(nvme_ctrl_t c, const struct nvme_fabrics_config *defcfg
 			if (child) {
 				if (discover)
 					nvmf_discover(child, defcfg, true, flags);
-				if (!nvme_ctrl_is_persistent(c))
-					nvme_ctrl_disconnect(c);
+				if (!nvme_ctrl_is_persistent(child))
+					nvme_ctrl_disconnect(child);
 				nvme_free_ctrl(child);
 			} else if (errno == EALREADY && !quiet) {
 				char *traddr = log->entries[i].traddr;
