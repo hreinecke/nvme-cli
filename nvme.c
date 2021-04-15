@@ -5796,7 +5796,7 @@ static void json_parse_subsys(nvme_host_t h, struct json_object *subsys_obj)
 	if (!nqn_obj)
 		return;
 	nqn = json_object_get_string(nqn_obj);
-	s = nvme_lookup_subsystem(h, nqn);
+	s = nvme_lookup_subsystem(h, NULL, nqn);
 	port_array = json_object_object_get(subsys_obj, "ports");
 	if (!port_array)
 		return;
@@ -6067,7 +6067,6 @@ static int discover_from_conf_file(nvme_host_t h, const char *desc,
 	argv[0] = "discover";
 	memset(line, 0, sizeof(line));
 	while (fgets(line, sizeof(line), f) != NULL) {
-		nvme_subsystem_t s;
 		nvme_ctrl_t c;
 
 		if (line[0] == '#' || line[0] == '\n')
@@ -6087,15 +6086,12 @@ static int discover_from_conf_file(nvme_host_t h, const char *desc,
 		if (!transport && !traddr)
 			goto next;
 
-		s = nvme_lookup_subsystem(h, NVME_DISC_SUBSYS_NAME);
-		if (!s)
-			goto next;
-		c = nvme_lookup_ctrl(s, transport, traddr,
+		c = nvme_create_ctrl(NVME_DISC_SUBSYS_NAME, transport, traddr,
 				     host_traddr, trsvcid);
 		if (!c)
 			goto next;
 		errno = 0;
-		ret = nvmf_add_ctrl(c, &cfg, false);
+		ret = nvmf_add_ctrl(h, c, &cfg, false);
 		if (ret < 0) {
 			/* Ignore errors from discovery */
 			nvmf_discover(c, defcfg, connect, 0);
@@ -6171,28 +6167,28 @@ int discover(const char *desc, int argc, char **argv, bool connect)
 	if (config_file && strcmp(config_file, "none"))
 		json_read_config(r, config_file);
 	h = nvme_lookup_host(r, hostnqn, hostid);
-	if (!h)
-		return ENOMEM;
+	if (!h) {
+		ret = ENOMEM;
+		goto out_free;
+	}
 	if (device && !strcmp(device, "none"))
 		device = NULL;
 
 	if (!device && !transport && !traddr)
 		ret = discover_from_conf_file(h, desc, connect, &cfg);
 	else {
-		nvme_subsystem_t s;
-		nvme_ctrl_t c = NULL;
+		nvme_ctrl_t c;
 
-		s = nvme_lookup_subsystem(h, subsysnqn);
-		if (!s)
-			return -ENOMEM;
-		c = nvme_lookup_ctrl(s, transport, traddr,
+		c = nvme_create_ctrl(subsysnqn, transport, traddr,
 				     host_traddr, trsvcid);
-		if (!c)
-			return -ENOMEM;
+		if (!c) {
+			ret = ENOMEM;
+			goto out_free;
+		}
 		tmp_device = nvme_ctrl_get_name(c);
 		if (!tmp_device) {
 			errno = 0;
-			ret = nvmf_add_ctrl(c, &cfg, false);
+			ret = nvmf_add_ctrl(h, c, &cfg, false);
 		} else if (strcmp(tmp_device, device)) {
 			device = NULL;
 			ret = 0;
@@ -6202,20 +6198,22 @@ int discover(const char *desc, int argc, char **argv, bool connect)
 			ret = nvmf_discover(c, &cfg, connect, flags);
 			if (!device && !nvme_ctrl_is_persistent(c))
 				nvme_ctrl_disconnect(c);
-			nvme_free_ctrl(c);
 		} else {
 			fprintf(stderr, "no controller found\n");
 			ret = errno;
+			nvme_free_ctrl(c);
 		}
 	}
 
 	if (config_file && strcmp(config_file, "none"))
 		json_update_config(r, config_file);
+out_free:
 	if (hnqn)
 		free(hnqn);
 	if (hid)
 		free(hid);
 
+	nvme_free_tree(r);
 	return ret;
 }
 
@@ -6241,7 +6239,6 @@ static int connect_cmd(int argc, char **argv, struct command *command, struct pl
 	char *config_file = "none";
 	nvme_root_t r;
 	nvme_host_t h;
-	nvme_subsystem_t s;
 	nvme_ctrl_t c;
 	int ret;
 
@@ -6289,21 +6286,27 @@ static int connect_cmd(int argc, char **argv, struct command *command, struct pl
 	if (config_file && strcmp(config_file, "none"))
 		json_read_config(r, config_file);
 	h = nvme_lookup_host(r, hostnqn, hostid);
-	if (!h)
-		return ENOMEM;
-	s = nvme_lookup_subsystem(h, subsysnqn);
-	if (!s)
-		return ENOMEM;
-	c = nvme_lookup_ctrl(s, transport, traddr,
+	if (!h) {
+		errno = ENOMEM;
+		goto out_free;
+	}
+	c = nvme_create_ctrl(subsysnqn, transport, traddr,
 			     host_traddr, trsvcid);
-	if (!c)
-		return ENOMEM;
+	if (!c) {
+		errno = ENOMEM;
+		goto out_free;
+	}
 	errno = 0;
-	nvmf_add_ctrl_opts(c, &cfg);
+	nvmf_add_ctrl(h, c, &cfg, false);
 
 	if (config_file && strcmp(config_file, "none"))
 		json_update_config(r, config_file);
-
+out_free:
+	if (hnqn)
+		free(hnqn);
+	if (hostid)
+		free(hostid);
+	nvme_free_tree(r);
 	return errno;
 }
 
