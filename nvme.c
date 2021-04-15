@@ -6149,6 +6149,7 @@ int discover(const char *desc, int argc, char **argv, bool connect)
 		OPT_FLAG("persistent",   'p', &cfg.persistent,    "persistent discovery connection"),
 		OPT_FLAG("quiet",        'S', &quiet,         "suppress already connected errors"),
 		OPT_STRING("config",     'C', "CONFIG", &config_file,   "JSON configuration file (or 'none' to disable)"),
+		OPT_FLAG("verbose",      'v', &cfg.verbose,   "verbose output"),
 		OPT_END()
 	};
 
@@ -6252,6 +6253,7 @@ static int connect_cmd(int argc, char **argv, struct command *command, struct pl
 		OPT_STRING("nqn", 'n', "NAME", &subsysnqn, nvmf_nqn),
 		NVMF_OPTS(cfg),
 		OPT_STRING("config", 'C', "CONFIG", &config_file, "JSON configuration file (or 'none' to disable)"),
+		OPT_FLAG("verbose", 'v', &cfg.verbose,   "verbose output"),
 		OPT_END()
 	};
 
