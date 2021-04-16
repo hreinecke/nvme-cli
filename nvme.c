@@ -5900,8 +5900,13 @@ static void json_update_subsys(struct json_object *subsys_array,
 			       nvme_subsystem_t s)
 {
 	nvme_ctrl_t c;
+	const char *subsysnqn = nvme_subsystem_get_nqn(s);
 	struct json_object *subsys_obj = json_create_object();
 	struct json_object *port_array;
+
+	/* Skip discovery subsystems as the nqn is not unique */
+	if (!strcmp(subsysnqn, NVME_DISC_SUBSYS_NAME))
+		return;
 
 	json_object_add_value_string(subsys_obj, "nqn",
 				     nvme_subsystem_get_nqn(s));
@@ -6046,7 +6051,10 @@ static int discover_from_conf_file(nvme_host_t h, const char *desc,
 	int argc, ret = 0;
 	FILE *f;
 
-	struct nvme_fabrics_config cfg = { 0 };
+	struct nvme_fabrics_config cfg = {
+		.tos = -1,
+		.ctrl_loss_tmo = NVMF_DEF_CTRL_LOSS_TMO,
+	};
 
 	OPT_ARGS(opts) = {
 		NVMF_OPTS(cfg),
@@ -6145,7 +6153,7 @@ int discover(const char *desc, int argc, char **argv, bool connect)
 		OPT_FLAG("persistent",   'p', &cfg.persistent,    "persistent discovery connection"),
 		OPT_FLAG("quiet",        'S', &quiet,         "suppress already connected errors"),
 		OPT_STRING("config",     'C', "CONFIG", &config_file,   "JSON configuration file (or 'none' to disable)"),
-		OPT_FLAG("verbose",      'v', &cfg.verbose,   "verbose output"),
+		OPT_FLAG("verbose",      'v', &cfg.verbose,   "Increase output verbosity"),
 		OPT_END()
 	};
 
@@ -6232,6 +6240,7 @@ static int connect_all_cmd(int argc, char **argv, struct command *command, struc
 static int connect_cmd(int argc, char **argv, struct command *command, struct plugin *plugin)
 {
 	const char *desc = "Connect to NVMeoF subsystem";
+	const char *verbose = "Increase output verbosity";
 	char *hnqn = NULL, *hid = NULL;
 	char *subsysnqn = NULL;
 	char *transport = NULL, *traddr = NULL, *host_traddr = NULL;
@@ -6250,7 +6259,7 @@ static int connect_cmd(int argc, char **argv, struct command *command, struct pl
 		OPT_STRING("nqn", 'n', "NAME", &subsysnqn, nvmf_nqn),
 		NVMF_OPTS(cfg),
 		OPT_STRING("config", 'C', "CONFIG", &config_file, "JSON configuration file (or 'none' to disable)"),
-		OPT_FLAG("verbose", 'v', &cfg.verbose,   "verbose output"),
+		OPT_FLAG("verbose", 'v', &cfg.verbose, verbose),
 		OPT_END()
 	};
 
@@ -6315,6 +6324,7 @@ static int disconnect_cmd(int argc, char **argv, struct command *command, struct
 	const char *desc = "Disconnect from NVMeoF subsystem";
 	const char *nqn = "nvme qualified name";
 	const char *device = "nvme device handle";
+	const char *verbose = "Increase output verbosity";
 	nvme_subsystem_t s;
 	nvme_root_t r;
 	nvme_host_t h;
@@ -6325,6 +6335,7 @@ static int disconnect_cmd(int argc, char **argv, struct command *command, struct
 	struct config {
 		char *nqn;
 		char *device;
+		int verbose;
 	};
 
 	struct config cfg = { 0 };
@@ -6332,6 +6343,7 @@ static int disconnect_cmd(int argc, char **argv, struct command *command, struct
 	OPT_ARGS(opts) = {
 		OPT_STRING("nqn",    'n', "NAME", &cfg.nqn,    nqn),
 		OPT_STRING("device", 'd', "DEV",  &cfg.device, device),
+		OPT_FLAG("verbose", 'v', &cfg.verbose, verbose),
 		OPT_END()
 	};
 
@@ -6358,6 +6370,7 @@ static int disconnect_cmd(int argc, char **argv, struct command *command, struct
 			nvme_for_each_host(r, h) {
 				nvme_for_each_subsystem(h, s) {
 					nvme_subsystem_for_each_ctrl(s, c) {
+						nvme_ctrl_set_verbosity(c, verbose);
 						if (!nvme_ctrl_disconnect(c))
 							i++;
 					}
@@ -6381,13 +6394,13 @@ static int disconnect_cmd(int argc, char **argv, struct command *command, struct
 				nvme_free_tree(r);
 				return errno;
 			}
+			nvme_ctrl_set_verbosity(c, verbose);
 			ret = nvme_ctrl_disconnect(c);
 			if (!ret)
 				printf("Disconnected %s\n",
 					nvme_ctrl_get_name(c));
 			else
 				perror("disconnect");
-			nvme_free_ctrl(c);
 		}
 		nvme_free_tree(r);
 	}
@@ -6399,15 +6412,23 @@ int disconnect_all_cmd(int argc, char **argv, struct command *command,
 	struct plugin *plugin)
 {
 	const char *desc = "Disconnect from all connected NVMeoF subsystems";
-	char *transport = NULL;
+	const char *verbose = "Increase output verbosity";
 	nvme_subsystem_t s;
 	nvme_root_t r;
 	nvme_host_t h;
 	nvme_ctrl_t c;
 	int ret;
 
+	struct config {
+		char *transport;
+		int verbose;
+	};
+
+	struct config cfg = { 0 };
+
 	OPT_ARGS(opts) = {
-		OPT_STRING("transport", 'r', "STR", transport, nvmf_tport),
+		OPT_STRING("transport", 'r', "STR", &cfg.transport, nvmf_tport),
+		OPT_FLAG("verbose", 'v', &cfg.verbose, verbose),
 		OPT_END()
 	};
 
@@ -6424,14 +6445,14 @@ int disconnect_all_cmd(int argc, char **argv, struct command *command,
 	nvme_for_each_host(r, h) {
 		nvme_for_each_subsystem(h, s) {
 			nvme_subsystem_for_each_ctrl(s, c) {
-				if (transport &&
-				    strcmp(transport,
+				if (cfg.transport &&
+				    strcmp(cfg.transport,
 					   nvme_ctrl_get_transport(c)))
 					continue;
 				else if (!strcmp(nvme_ctrl_get_transport(c),
 						 "pcie"))
 					continue;
-
+				nvme_ctrl_set_verbosity(c, verbose);
 				if (nvme_ctrl_disconnect(c))
 					fprintf(stderr,
 						"failed to disconnect %s\n",
