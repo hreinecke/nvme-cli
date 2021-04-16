@@ -5979,7 +5979,7 @@ static void save_discovery_log(struct nvmf_discovery_log *log)
 	close(fd);
 }
 
-static int nvmf_discover(nvme_ctrl_t c, const struct nvme_fabrics_config *defcfg,
+static int nvmf_discover(nvme_ctrl_t c, const struct nvme_fabrics_config *cfg,
 	bool connect, enum nvme_print_flags flags)
 {
 	struct nvmf_discovery_log *log = NULL;
@@ -6015,14 +6015,14 @@ static int nvmf_discover(nvme_ctrl_t c, const struct nvme_fabrics_config *defcfg
 			nvme_ctrl_t child;
 
 			errno = 0;
-			child = nvmf_connect_disc_entry(h, e, defcfg,
+			child = nvmf_connect_disc_entry(h, e, cfg,
 							&discover);
-			if (child) {
-				if (discover)
-					nvmf_discover(child, defcfg, true, flags);
-				if (!nvme_ctrl_is_persistent(child))
+			if (child && discover) {
+				nvmf_discover(child, cfg, true, flags);
+				if (!nvme_ctrl_is_persistent(child)) {
 					nvme_ctrl_disconnect(child);
-				nvme_free_ctrl(child);
+					nvme_free_ctrl(child);
+				}
 			} else if (errno == EALREADY && !quiet) {
 				char *traddr = log->entries[i].traddr;
 
@@ -6128,7 +6128,7 @@ int discover(const char *desc, int argc, char **argv, bool connect)
 	enum nvme_print_flags flags;
 	int ret;
 	char *format = "normal";
-	char *config_file = "none";
+	char *config_file = PATH_NVMF_CONFIG;
 
 	struct nvme_fabrics_config cfg = {
 		.tos = -1,
@@ -6236,7 +6236,7 @@ static int connect_cmd(int argc, char **argv, struct command *command, struct pl
 	char *subsysnqn = NULL;
 	char *transport = NULL, *traddr = NULL, *host_traddr = NULL;
 	char *trsvcid = NULL, *hostnqn = NULL, *hostid = NULL;
-	char *config_file = "none";
+	char *config_file = PATH_NVMF_CONFIG;
 	nvme_root_t r;
 	nvme_host_t h;
 	nvme_ctrl_t c;
