@@ -6140,6 +6140,7 @@ int discover(const char *desc, int argc, char **argv, bool connect)
 
 	struct nvme_fabrics_config cfg = {
 		.tos = -1,
+		.ctrl_loss_tmo = NVMF_DEF_CTRL_LOSS_TMO,
 	};
 
 	char *device = NULL;
@@ -6253,6 +6254,7 @@ static int connect_cmd(int argc, char **argv, struct command *command, struct pl
 
 	struct nvme_fabrics_config cfg = {
 		.tos = -1,
+		.ctrl_loss_tmo = NVMF_DEF_CTRL_LOSS_TMO,
 	};
 
 	OPT_ARGS(opts) = {
