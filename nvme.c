@@ -5723,9 +5723,11 @@ static void json_discovery_log(struct nvmf_discovery_log *log, int numrec)
 #define JSON_UPDATE_BOOL_OPTION(c, k, a, o)				\
 	if (!strcmp(# a, k ) && !c->a) c->a = json_object_get_boolean(o);
 
-static void json_update_attributes(struct nvme_fabrics_config *cfg,
+static void json_update_attributes(nvme_ctrl_t c,
 				   struct json_object *ctrl_obj)
 {
+	struct nvme_fabrics_config *cfg = nvme_ctrl_get_config(c);
+
 	json_object_object_foreach(ctrl_obj, key_str, val_obj) {
 		JSON_UPDATE_INT_OPTION(cfg, key_str,
 				       nr_io_queues, val_obj);
@@ -5752,8 +5754,9 @@ static void json_update_attributes(struct nvme_fabrics_config *cfg,
 					hdr_digest, val_obj);
 		JSON_UPDATE_BOOL_OPTION(cfg, key_str,
 					data_digest, val_obj);
-		JSON_UPDATE_BOOL_OPTION(cfg, key_str,
-					persistent, val_obj);
+		if (!strcmp("persistent", key_str) &&
+		    !nvme_ctrl_is_persistent(c))
+			nvme_ctrl_set_persistent(c, true);
 	}
 }
 
@@ -5780,8 +5783,7 @@ static void json_parse_port(nvme_subsystem_t s, struct json_object *port_obj)
 	c = nvme_lookup_ctrl(s, transport, traddr,
 			     host_traddr, trsvcid);
 	if (c) {
-		struct nvme_fabrics_config *cfg = nvme_ctrl_get_config(c);
-		json_update_attributes(cfg, port_obj);
+		json_update_attributes(c, port_obj);
 	}
 }
 
@@ -5892,7 +5894,8 @@ static void json_update_port(struct json_object *ctrl_array, nvme_ctrl_t c)
 	JSON_BOOL_OPTION(cfg, port_obj, disable_sqflow);
 	JSON_BOOL_OPTION(cfg, port_obj, hdr_digest);
 	JSON_BOOL_OPTION(cfg, port_obj, data_digest);
-	JSON_BOOL_OPTION(cfg, port_obj, persistent);
+	if (nvme_ctrl_is_persistent(c))
+		json_object_add_value_bool(port_obj, "persistent", true);
 	json_array_add_value_object(ctrl_array, port_obj);
 }
 
@@ -6131,6 +6134,7 @@ int discover(const char *desc, int argc, char **argv, bool connect)
 	char *subsysnqn = NVME_DISC_SUBSYS_NAME;
 	char *transport = NULL, *traddr = NULL, *host_traddr = NULL;
 	char *trsvcid = NULL, *hostnqn = NULL, *hostid = NULL;
+	bool persistent;
 	nvme_root_t r;
 	nvme_host_t h;
 	enum nvme_print_flags flags;
@@ -6151,7 +6155,7 @@ int discover(const char *desc, int argc, char **argv, bool connect)
 		NVMF_OPTS(cfg),
 		OPT_FMT("output-format", 'o', &format,        output_format),
 		OPT_FILE("raw",          'r', &raw,           "save raw output to file"),
-		OPT_FLAG("persistent",   'p', &cfg.persistent,    "persistent discovery connection"),
+		OPT_FLAG("persistent",   'p', &persistent,    "persistent discovery connection"),
 		OPT_FLAG("quiet",        'S', &quiet,         "suppress already connected errors"),
 		OPT_STRING("config",     'C', "CONFIG", &config_file,   "JSON configuration file (or 'none' to disable)"),
 		OPT_FLAG("verbose",      'v', &cfg.verbose,   "Increase output verbosity"),
@@ -6167,7 +6171,7 @@ int discover(const char *desc, int argc, char **argv, bool connect)
 		return ret;
 
 	r = nvme_scan();
-	if (cfg.persistent && !cfg.keep_alive_tmo)
+	if (persistent && !cfg.keep_alive_tmo)
 		cfg.keep_alive_tmo = 30;
 	if (!hostnqn)
 		hostnqn = hnqn = nvmf_hostnqn_from_file();
@@ -6202,7 +6206,8 @@ int discover(const char *desc, int argc, char **argv, bool connect)
 			device = NULL;
 			ret = 0;
 		}
-
+		if (persistent)
+			nvme_ctrl_set_persistent(c, persistent);
 		if (!ret) {
 			ret = nvmf_discover(c, &cfg, connect, flags);
 			if (!device && !nvme_ctrl_is_persistent(c))
