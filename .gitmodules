@@ -1,4 +1,4 @@
 [submodule "libnvme"]
 	path = libnvme
 	url = git@github.com:hreinecke/libnvme.git
-	branch = topology-int
+	branch = topology-int.v2
