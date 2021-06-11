@@ -2,3 +2,6 @@
 	path = libnvme
 	url = https://github.com/hreinecke/libnvme.git
 	branch = nvme-cli
+[submodule "event"]
+	path = event
+	url = git://github.com/mwilck/minivent
