@@ -9,11 +9,11 @@
 #include <string.h>
 #include <libgen.h>
 #include <sys/stat.h>
+#include <limits.h>
+
 #include "nvme.h"
 #include "nvme-print.h"
-#include "nvme-ioctl.h"
-#include <sys/ioctl.h>
-#include <limits.h>
+
 #define CREATE_CMD
 #include "micron-nvme.h"
 
@@ -310,8 +310,8 @@ static int GetLogPageSize(int nFD, unsigned char ucLogID, int *nLogSize)
     LogPageHeader_t *pLogHeader = NULL;
 
     if (ucLogID == 0xC1 || ucLogID == 0xC2 || ucLogID == 0xC4) {
-        err = nvme_get_log(nFD, NVME_NSID_ALL, ucLogID, false, NVME_NO_LOG_LSP,
-                           CommonChunkSize, pTmpBuf);
+        err = nvme_get_log_simple(nFD, ucLogID,
+				  CommonChunkSize, pTmpBuf);
         if (err == 0) {
             pLogHeader = (LogPageHeader_t *) pTmpBuf;
             LogPageHeader_t *pLogHeader1 = (LogPageHeader_t *) pLogHeader;
@@ -333,7 +333,7 @@ static int GetLogPageSize(int nFD, unsigned char ucLogID, int *nLogSize)
 static int NVMEGetLogPage(int nFD, unsigned char ucLogID, unsigned char *pBuffer, int nBuffSize)
 {
     int err = 0;
-    struct nvme_admin_cmd cmd = { 0 };
+    struct nvme_passthru_cmd cmd = { 0 };
     unsigned int uiNumDwords = (unsigned int)nBuffSize / sizeof(unsigned int);
     unsigned int uiMaxChunk = uiNumDwords;
     unsigned int uiNumChunks = 1;
@@ -379,7 +379,7 @@ static int NVMEGetLogPage(int nFD, unsigned char ucLogID, unsigned char *pBuffer
         cmd.addr = (__u64) (uintptr_t) pTempPtr;
         cmd.nsid = 0xFFFFFFFF;
         cmd.data_len = uiXferDwords * 4;
-        err = nvme_submit_passthru(nFD, NVME_IOCTL_ADMIN_CMD, &cmd);
+        err = nvme_submit_admin_passthru(nFD, &cmd, NULL);
         ullBytesRead += uiXferDwords * 4;
         pTempPtr = pBuffer + ullBytesRead;
     }
@@ -421,8 +421,7 @@ static int GetCommonLogPage(int nFD, unsigned char ucLogID,
         goto exit_status;
     }
     memset(pTempPtr, 0, nBuffSize);
-    err = nvme_get_log(nFD, NVME_NSID_ALL, ucLogID, false, NVME_NO_LOG_LSP,
-                       nBuffSize, pTempPtr);
+    err = nvme_get_log_simple(nFD, ucLogID, nBuffSize, pTempPtr);
     *pBuffer = pTempPtr;
 
 exit_status:
@@ -453,8 +452,8 @@ static int micron_parse_options(int argc, char **argv, const char *desc,
 
 static int micron_fw_commit(int fd, int select)
 {
-    struct nvme_admin_cmd cmd = {
-        .opcode = nvme_admin_activate_fw,
+    struct nvme_passthru_cmd cmd = {
+        .opcode = nvme_admin_fw_commit,
         .cdw10 = 8,
         .cdw12 = select,
     };
@@ -626,7 +625,7 @@ static int micron_smbus_option(int argc, char **argv,
 
     if (!strcmp(opt.option, "enable")) {
         cdw11 = opt.value << 1 | 1;
-        err = nvme_set_feature(fd, 1, fid, cdw11, 0, opt.save, 0, 0, 0, &result);
+        err = nvme_set_features_simple(fd, fid, 1, cdw11, opt.save, &result);
         if (err == 0) {
             printf("successfully enabled SMBus on drive\n");
         } else {
@@ -635,7 +634,7 @@ static int micron_smbus_option(int argc, char **argv,
     }
     else if (!strcmp(opt.option, "status")) {
         cdw10 = opt.value;
-        err = nvme_get_feature(fd, 1, fid, cdw10, 0, 0, 0, 0, &result);
+        err = nvme_get_features(fd, fid, 1, 0, cdw10, 0, 0, NULL, &result);
         if (err == 0) {
             printf("SMBus status on the drive: %s (returns %s temperature) \n",
                     (result & 1) ? "enabled" : "disabled",
@@ -646,7 +645,7 @@ static int micron_smbus_option(int argc, char **argv,
     }
     else if (!strcmp(opt.option, "disable")) {
         cdw11 = opt.value << 1 | 0;
-        err = nvme_set_feature(fd, 1, fid, cdw11, 0, opt.save, 0, 0, 0, &result);
+        err = nvme_set_features_simple(fd, fid, 1, cdw11, opt.save, &result);
         if (err == 0) {
             printf("Successfully disabled SMBus on drive\n");
         } else {
@@ -697,7 +696,7 @@ static int micron_temp_stats(int argc, char **argv, struct command *cmd,
     if (strcmp(cfg.fmt, "json") == 0)
         is_json = true;
 
-    err = nvme_smart_log(fd, 0xffffffff, &smart_log);
+    err = nvme_get_log_smart(fd, 0xffffffff, false, &smart_log);
     if (!err) {
         temperature = ((smart_log.temperature[1] << 8) | smart_log.temperature[0]);
         temperature = temperature ? temperature - 273 : 0;
@@ -932,7 +931,7 @@ static int micron_clear_pcie_correctable_errors(int argc, char **argv,
 
     /* For M51CX models, PCIe errors are cleared using 0xC3 feature */
     if (model == M51CX) {
-        err = nvme_set_feature(fd, 0, fid, (1 << 31), 0, 0, 0, 0, 0, &result);
+      err = nvme_set_features_simple(fd, fid, 0, (1 << 31), false, &result);
         if (err == 0 && (err = (int)result) == 0)
             printf("Device correctable errors cleared!\n");
         else
@@ -1366,14 +1365,12 @@ static int micron_nand_stats(int argc, char **argv,
         goto out;
     }
 
-    err = nvme_get_log(fd, NVME_NSID_ALL, 0xD0, false, NVME_NO_LOG_LSP,
-                       D0_log_size, extSmartLog);
+    err = nvme_get_log_simple(fd, 0xD0, D0_log_size, extSmartLog);
     has_d0_log = (0 == err);
 
     /* should check for firmware version if this log is supported or not */
     if (eModel == M5407 || eModel == M5410) {
-        err = nvme_get_log(fd, NVME_NSID_ALL, 0xFB, false, NVME_NO_LOG_LSP,
-                           FB_log_size, logFB);
+        err = nvme_get_log_simple(fd, 0xFB, FB_log_size, logFB);
         has_fb_log = (0 == err);
     }
 
@@ -1479,7 +1476,7 @@ static void GetCtrlIDDInfo(const char *dir, struct nvme_id_ctrl *ctrlp)
 static void GetSmartlogData(int fd, const char *dir)
 {
     struct nvme_smart_log smart_log;
-    if (nvme_smart_log(fd, -1, &smart_log) == 0) {
+    if (nvme_get_log_smart(fd, -1, false, &smart_log) == 0) {
         WriteData((__u8*)&smart_log, sizeof(smart_log), dir,
                   "smart_data.bin", "smart log");
     }
@@ -1494,7 +1491,7 @@ static void GetErrorlogData(int fd, int entries, const char *dir)
     if (error_log == NULL)
         return;
 
-    if (nvme_error_log(fd, entries, error_log) == 0) {
+    if (nvme_get_log_error(fd, entries, false, error_log) == 0) {
         WriteData((__u8*)error_log, logSize, dir,
                   "error_information_log.bin", "error log");
     }
@@ -1505,50 +1502,50 @@ static void GetErrorlogData(int fd, int entries, const char *dir)
 static void GetGenericLogs(int fd, const char *dir)
 {
     struct nvme_self_test_log self_test_log;
-    struct nvme_firmware_log_page fw_log;
-    struct nvme_effects_log_page effects;
-    struct nvme_persistent_event_log_head pevent_log_head;
+    struct nvme_firmware_slot fw_log;
+    struct nvme_cmd_effects_log effects;
+    struct nvme_persistent_event_log pevent_log;
     void *pevent_log_info = NULL;
     __u32 log_len = 0;
     int err = 0 ;
     bool huge = false;
 
     /* get self test log */
-    if (nvme_self_test_log(fd, sizeof(self_test_log), &self_test_log) == 0) {
+    if (nvme_get_log_device_self_test(fd, &self_test_log) == 0) {
         WriteData((__u8*)&self_test_log, sizeof(self_test_log), dir,
                   "drive_self_test.bin", "self test log");
     }
 
     /* get fw slot info log */
-    if (nvme_fw_log(fd, &fw_log) == 0) {
+    if (nvme_get_log_fw_slot(fd, 1, &fw_log) == 0) {
         WriteData((__u8*)&fw_log, sizeof(fw_log), dir,
                   "firmware_slot_info_log.bin", "firmware log");
     }
 
     /* get effects log */
-    if (nvme_effects_log(fd, &effects) == 0) {
+    if (nvme_get_log_cmd_effects(fd, NVME_CSI_NVM, &effects) == 0) {
         WriteData((__u8*)&effects, sizeof(effects), dir,
                   "command_effects_log.bin", "effects log");
     }
     
     /* get persistent event log */
-    (void)nvme_persistent_event_log(fd, NVME_PEVENT_LOG_RELEASE_CTX,
-                                    sizeof(pevent_log_head), &pevent_log_head);
-    memset(&pevent_log_head, 0, sizeof(pevent_log_head));
-    err = nvme_persistent_event_log(fd, NVME_PEVENT_LOG_EST_CTX_AND_READ, 
-                        sizeof(pevent_log_head), &pevent_log_head);
+    (void)nvme_get_log_persistent_event(fd, NVME_PEVENT_LOG_RELEASE_CTX,
+                                    sizeof(pevent_log), &pevent_log);
+    memset(&pevent_log, 0, sizeof(pevent_log));
+    err = nvme_get_log_persistent_event(fd, NVME_PEVENT_LOG_EST_CTX_AND_READ,
+                        sizeof(pevent_log), &pevent_log);
     if (err) {
         fprintf(stderr, "Failed to set persistent event log read context");
         return;
     }
 
-    log_len = le64_to_cpu(pevent_log_head.tll);
+    log_len = le64_to_cpu(pevent_log.tll);
     pevent_log_info = nvme_alloc(log_len, &huge);
     if (!pevent_log_info) {
         perror("could not alloc buffer for persistent event log page\n");
         return;
     }
-    err = nvme_persistent_event_log(fd, NVME_PEVENT_LOG_READ,
+    err = nvme_get_log_persistent_event(fd, NVME_PEVENT_LOG_READ,
                                     log_len, pevent_log_info);
     if (err == 0) {
         WriteData((__u8*)pevent_log_info, log_len, dir,
@@ -1563,7 +1560,7 @@ static void GetNSIDDInfo(int fd, const char *dir, int nsid)
     char file[PATH_MAX] = { 0 };
     struct nvme_id_ns ns;
 
-    if (nvme_identify_ns(fd, nsid, 0, &ns) == 0) {
+    if (nvme_identify_ns(fd, nsid, &ns) == 0) {
         sprintf(file, "identify_namespace_%d_data.bin", nsid);
         WriteData((__u8*)&ns, sizeof(ns), dir, file, "id-ns");
     }
@@ -1609,7 +1606,7 @@ static void GetOSConfig(const char *strOSDirName)
     }
 }
 
-static int micron_telemetry_log(int fd, __u8 gen, __u8 type, __u8 **data,
+static int micron_telemetry_log(int fd, __u8 type, __u8 **data,
                                 int *logSize, int da)
 {
     int err, bs = 512, offset = bs;
@@ -1619,7 +1616,10 @@ static int micron_telemetry_log(int fd, __u8 gen, __u8 type, __u8 **data,
     __u8 *buffer = (unsigned char *)calloc(bs, 1);
     if (buffer == NULL)
         return -1;
-    err = nvme_get_telemetry_log(fd, buffer, gen, ctrl_init, bs, 0);
+    if (ctrl_init)
+      err = nvme_get_log_telemetry_ctrl(fd, true, 0, bs, buffer);
+    else
+      err = nvme_get_log_telemetry_host(fd, 0, bs, buffer);
     if (err != 0) {
         fprintf(stderr, "Failed to get telemetry log header for 0x%X\n", type);
         if (buffer != NULL) {
@@ -1649,7 +1649,10 @@ static int micron_telemetry_log(int fd, __u8 gen, __u8 type, __u8 **data,
     err = 0;
     if ((buffer = (unsigned char *)realloc(buffer, (size_t)(*logSize))) != NULL) {
         while (err == 0 && offset != *logSize) {
-           err = nvme_get_telemetry_log(fd, buffer + offset, gen, ctrl_init, bs, offset);
+	  if (ctrl_init)
+	    err = nvme_get_log_telemetry_ctrl(fd, true, 0, *logSize, buffer + offset);
+	  else
+	    err = nvme_get_log_telemetry_host(fd, 0, *logSize, buffer + offset);
            offset += bs;
         }
     }
@@ -1679,8 +1682,7 @@ static int GetTelemetryData(int fd, const char *dir)
     };
 
     for(i = 0; i < (int)(sizeof(tmap)/sizeof(tmap[0])); i++) {
-        err = micron_telemetry_log(fd, (tmap[i].log == 0x07),
-                                   tmap[i].log, &buffer, &logSize, 0);
+        err = micron_telemetry_log(fd, tmap[i].log, &buffer, &logSize, 0);
         if (err == 0 && logSize > 0 && buffer != NULL) {
             sprintf(msg, "telemetry log: 0x%X", tmap[i].log);
             WriteData(buffer, logSize, dir, tmap[i].file, msg);
@@ -1727,7 +1729,7 @@ static int GetFeatureSettings(int fd, const char *dir)
             bufp = NULL;
         }
 
-        err = nvme_get_feature(fd, 1, fmap[i].id, 0, 0x0, 0, len, bufp, &attrVal);
+        err = nvme_get_features(fd, fmap[i].id, 1, 0, 0x0, 0, len, bufp, &attrVal);
         if (err == 0) {
             sprintf(msg, "feature: 0x%X", fmap[i].id);
             WriteData((__u8*)&attrVal, sizeof(attrVal), dir, fmap[i].file, msg);
@@ -1749,7 +1751,7 @@ static int micron_drive_info(int argc, char **argv, struct command *cmd,
     const char *desc = "Get drive HW information";
     int fd, err = 0;
     struct nvme_id_ctrl ctrl =  { 0 };
-    struct nvme_admin_cmd admin_cmd = { 0 };
+    struct nvme_passthru_cmd admin_cmd = { 0 };
     struct fb_drive_info {
         unsigned char hw_ver_major;
         unsigned char hw_ver_minor;
@@ -1790,7 +1792,7 @@ static int micron_drive_info(int argc, char **argv, struct command *cmd,
         admin_cmd.addr = (__u64) (uintptr_t) &dinfo;
         admin_cmd.data_len = (__u32)sizeof(dinfo);
         admin_cmd.cdw12 = 3;
-        err = ioctl(fd, NVME_IOCTL_ADMIN_CMD, &admin_cmd);
+        err = nvme_submit_admin_passthru(fd, &admin_cmd, NULL);
         if (err) {
             fprintf(stderr, "ERROR : drive-info opcode failed with 0x%x\n", err);
             return -1;
@@ -2017,7 +2019,7 @@ static int micron_fw_activation_history(int argc, char **argv, struct command *c
         goto out;
     }
 
-    err = nvme_get_log(fd, NVME_NSID_ALL, 0xC2, false, NVME_NO_LOG_LSP, C2_log_size, logC2);
+    err = nvme_get_log_simple(fd, 0xC2, C2_log_size, logC2);
     if (err)  {
         fprintf(stderr, "Failed to retrieve fw activation history log, error: %x\n", err);
         goto out;
@@ -2098,8 +2100,7 @@ static int micron_ocp_smart_health_logs(int argc, char **argv, struct command *c
     if (strcmp(cfg.fmt, "json") == 0)
         is_json = true;
 
-    err = nvme_get_log(fd, NVME_NSID_ALL, 0xC0, false, NVME_NO_LOG_LSP,
-                       C0_log_size, logC0);
+    err = nvme_get_log_simple(fd, 0xC0, C0_log_size, logC0);
     if (err < 0) {
         printf("Unable to retrieve extended smart log for the drive\n");
         err = -ENOTTY;
@@ -2133,7 +2134,7 @@ static int micron_clr_fw_activation_history(int argc, char **argv,
     }
 
     //err = nvme_set_feature(fd, 1, fid, cdw11, 0, opt.save, 0, 0, &result);
-    err = nvme_set_feature(fd, 1, fid, 0, 0, 0, 0, 0, 0, &result);
+    err = nvme_set_features_simple(fd, fid, 1, 0, 0, &result);
     if (err == 0) err = (int)result;
     return err;
 }
@@ -2179,14 +2180,14 @@ static int micron_telemetry_cntrl_option(int argc, char **argv,
     }
 
     if (!strcmp(opt.option, "enable")) {
-        err = nvme_set_feature(fd, 1, fid, 1, 0, (opt.select & 0x1), 0, 0, 0, &result);
+      err = nvme_set_features(fd, fid, 1, 1, 0, (opt.select & 0x1), 0, 0, 0, 0, &result);
         if (err == 0) {
             printf("successfully set controller telemetry option\n");
         } else {
             printf("Failed to set controller telemetry option\n");
         }
     } else if (!strcmp(opt.option, "disable")) {
-        err = nvme_set_feature(fd, 1, fid, 0, 0, (opt.select & 0x1), 0, 0, 0, &result);
+        err = nvme_set_features(fd, fid, 1, 0, 0, (opt.select & 0x1), 0, 0, 0, 0, &result);
         if (err == 0) {
             printf("successfully disabled controller telemetry option\n");
         } else {
@@ -2194,7 +2195,7 @@ static int micron_telemetry_cntrl_option(int argc, char **argv,
         }
     } else if (!strcmp(opt.option, "status")) {
         opt.select &= 0x3;
-        err = nvme_get_feature(fd, 1, fid, opt.select, 0, 0, 0, 0, &result);
+        err = nvme_get_features(fd, fid, 1, opt.select, 0, 0, 0, 0, &result);
         if (err == 0) {
             printf("Controller telemetry option : %s\n",
                     (result) ? "enabled" : "disabled");
@@ -2354,7 +2355,7 @@ static int micron_internal_logs(int argc, char **argv, struct command *cmd,
            goto out;
         }
         int logSize = 0; __u8 *buffer = NULL; const char *dir = ".";
-        err = micron_telemetry_log(fd, 0, cfg.log,  &buffer, &logSize, cfg.data_area);
+        err = micron_telemetry_log(fd, cfg.log,  &buffer, &logSize, cfg.data_area);
         if (err == 0 && logSize > 0 && buffer != NULL) {
             sprintf(msg, "telemetry log: 0x%X", cfg.log);
             WriteData(buffer, logSize, dir, cfg.package, msg);
@@ -2389,7 +2390,6 @@ static int micron_internal_logs(int argc, char **argv, struct command *cmd,
     GetSmartlogData(fd, strCtrlDirName);
     GetErrorlogData(fd, ctrl.elpe, strCtrlDirName);
     GetGenericLogs(fd, strCtrlDirName);
-
     // pull if telemetry log data is supported
     if ((ctrl.lpa & 0x8) == 0x8)
         GetTelemetryData(fd, strCtrlDirName);
@@ -2434,8 +2434,8 @@ static int micron_internal_logs(int argc, char **argv, struct command *cmd,
                 if (eModel == M5410 || eModel == M5407)
                     err = NVMEGetLogPage(fd, aVendorLogs[i].ucLogPage, dataBuffer, bSize);
                 else
-                    err = nvme_get_log(fd, NVME_NSID_ALL, aVendorLogs[i].ucLogPage,
-                                       false, NVME_NO_LOG_LSP, bSize, dataBuffer);
+                    err = nvme_get_log_simple(fd, aVendorLogs[i].ucLogPage,
+					      bSize, dataBuffer);
             }
             break;
 
@@ -2453,14 +2453,14 @@ static int micron_internal_logs(int argc, char **argv, struct command *cmd,
                break;
             }
             memset(dataBuffer, 0, bSize);
-            err = nvme_get_log(fd, NVME_NSID_ALL, aVendorLogs[i].ucLogPage,
-                               false, NVME_NO_LOG_LSP, bSize, dataBuffer);
+            err = nvme_get_log_simple(fd, aVendorLogs[i].ucLogPage,
+				      bSize, dataBuffer);
             maxSize = aVendorLogs[i].nMaxSize - bSize;
             while (err == 0 && maxSize > 0 && ((unsigned int *)dataBuffer)[0] != 0xdeadbeef) {
                 sprintf(msg, "log 0x%x", aVendorLogs[i].ucLogPage);
                 WriteData(dataBuffer, bSize, strCtrlDirName, aVendorLogs[i].strFileName, msg);
-                err = nvme_get_log(fd, NVME_NSID_ALL, aVendorLogs[i].ucLogPage,
-                                   false, NVME_NO_LOG_LSP, bSize, dataBuffer);
+                err = nvme_get_log_simple(fd, aVendorLogs[i].ucLogPage,
+					  bSize, dataBuffer);
                 if (err || (((unsigned int *)dataBuffer)[0] == 0xdeadbeef))
                     break;
                 maxSize -= bSize;
