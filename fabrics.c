@@ -204,8 +204,8 @@ static void save_discovery_log(char *raw, struct nvmf_discovery_log *log)
 
 	fd = open(raw, O_CREAT|O_RDWR|O_TRUNC, S_IRUSR|S_IWUSR);
 	if (fd < 0) {
-		fprintf(stderr, "failed to open %s: %s\n",
-			raw, strerror(errno));
+		nvme_msg(LOG_ERR, "failed to open %s: %s\n",
+			 raw, strerror(errno));
 		return;
 	}
 
@@ -213,8 +213,8 @@ static void save_discovery_log(char *raw, struct nvmf_discovery_log *log)
 		numrec * sizeof(struct nvmf_disc_log_entry);
 	ret = write(fd, log, len);
 	if (ret < 0)
-		fprintf(stderr, "failed to write to %s: %s\n",
-			raw, strerror(errno));
+		nvme_msg(LOG_ERR, "failed to write to %s: %s\n",
+			 raw, strerror(errno));
 	else
 		printf("Discovery log is saved to %s\n", raw);
 
@@ -234,7 +234,8 @@ static int __discover(nvme_ctrl_t c, const struct nvme_fabrics_config *defcfg,
 		if (ret > 0)
 			nvme_show_status(ret);
 		else
-			perror("nvmf-discover-log");
+			nvme_msg(LOG_ERR, "Failed to get discovery log: %d\n",
+				 ret);
 		return nvme_status_to_errno(ret, false);
 	}
 
@@ -269,8 +270,9 @@ static int __discover(nvme_ctrl_t c, const struct nvme_fabrics_config *defcfg,
 				char *traddr = log->entries[i].traddr;
 
 				space_strip_len(NVMF_TRADDR_SIZE, traddr);
-				fprintf(stderr, "traddr=%s is already connected\n",
-					traddr);
+				nvme_msg(LOG_ERR,
+					 "traddr=%s is already connected\n",
+					 traddr);
 			}
 		}
 	}
@@ -410,6 +412,8 @@ static nvme_ctrl_t nvme_find_matching_ctrl(struct nvme_fabrics_config *cfg)
 	}
 found:
 	nvme_free_tree(r);
+	if (!c)
+		nvme_msg(LOG_ERR, "no NVMe controller(s) detected.\n");
 	return c;
 }
 
@@ -480,7 +484,7 @@ int nvmf_discover(const char *desc, int argc, char **argv, bool connect)
 				nvme_ctrl_disconnect(c);
 			nvme_free_ctrl(c);
 		} else {
-			fprintf(stderr, "no controller found\n");
+			nvme_msg(LOG_ERR, "no controller found\n");
 			ret = errno;
 		}
 	}
@@ -512,21 +516,22 @@ int nvmf_connect(const char *desc, int argc, char **argv)
 		return ret;
 
 	if (!cfg.nqn) {
-		fprintf(stderr, "required argument [--nqn | -n] not specified\n");
+		nvme_msg(LOG_ERR,
+			 "required argument [--nqn | -n] not specified\n");
 		return EINVAL;
 	}
 
 	if (!cfg.transport) {
-		fprintf(stderr,
+		nvme_msg(LOG_ERR,
 			 "required argument [--transport | -t] not specified\n");
 		return EINVAL;
 	}
 
 	if (strcmp(cfg.transport, "loop")) {
 		if (!cfg.traddr) {
-			fprintf(stderr,
-				"required argument [--address | -a] not specified for transport %s\n",
-				cfg.transport);
+			nvme_msg(LOG_ERR,
+				 "required argument [--address | -a] not specified for transport %s\n",
+				 cfg.transport);
 			return EINVAL;
 		}
 	}
@@ -564,8 +569,8 @@ int nvmf_disconnect(const char *desc, int argc, char **argv)
 		return ret;
 
 	if (!cfg.nqn && !cfg.device) {
-		fprintf(stderr,
-			"Neither device name [--device | -d] nor NQN [--nqn | -n] provided\n");
+		nvme_msg(LOG_ERR,
+			 "Neither device name [--device | -d] nor NQN [--nqn | -n] provided\n");
 		return EINVAL;
 	}
 
@@ -598,7 +603,8 @@ int nvmf_disconnect(const char *desc, int argc, char **argv)
 		while ((p = strsep(&d, ",")) != NULL) {
 			c = nvme_scan_ctrl(p);
 			if (!c) {
-				fprintf(stderr, "Did not find device: %s\n", p);
+				nvme_msg(LOG_ERR,
+					 "Did not find device: %s\n", p);
 				return errno;
 			}
 			ret = nvme_ctrl_disconnect(c);
@@ -606,7 +612,9 @@ int nvmf_disconnect(const char *desc, int argc, char **argv)
 				printf("Disconnected %s\n",
 					nvme_ctrl_get_name(c));
 			else
-				perror("disconnect");
+				nvme_msg(LOG_ERR,
+					 "Failed to disconnect %s: %s\n",
+					 nvme_ctrl_get_name(c), strerror(errno));
 			nvme_free_ctrl(c);
 		}
 	}
@@ -652,9 +660,9 @@ int nvmf_disconnect_all(const char *desc, int argc, char **argv)
 					 "pcie"))
 				continue;
 			if (nvme_ctrl_disconnect(c))
-				fprintf(stderr,
-					"failed to disconnect %s\n",
-					nvme_ctrl_get_name(c));
+				nvme_msg(LOG_ERR,
+					 "failed to disconnect %s\n",
+					 nvme_ctrl_get_name(c));
 		}
 	}
 	nvme_free_tree(r);

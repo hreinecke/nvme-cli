@@ -69,7 +69,7 @@ NVME_DPKG_VERSION=1~`lsb_release -sc`
 OBJS := nvme-print.o nvme-rpmb.o nvme-models.o plugin.o fabrics.o
 
 UTIL_OBJS := util/argconfig.o util/suffix.o util/parser.o \
-	util/cleanup.o util/log.o
+	util/cleanup.o
 ifneq ($(LIBJSONC), 0)
 override UTIL_OBJS += util/json.o
 endif
