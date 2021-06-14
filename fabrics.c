@@ -396,17 +396,20 @@ static bool nvme_ctrl_match_cfg(nvme_ctrl_t c, struct nvme_fabrics_config *cfg)
 
 static nvme_ctrl_t nvme_find_matching_ctrl(struct nvme_fabrics_config *cfg)
 {
+	nvme_host_t h;
 	nvme_subsystem_t s;
 	nvme_root_t r;
 	nvme_ctrl_t c;
 
 	nqn_match = cfg->nqn;
 	r = nvme_scan_filter(nvme_match_subsysnqn_filter);
-	nvme_for_each_subsystem(r, s) {
-		nvme_subsystem_for_each_ctrl(s, c) {
-			if (nvme_ctrl_match_cfg(c, cfg)) {
-				nvme_unlink_ctrl(c);
-				goto found;
+	nvme_for_each_host(r, h) {
+		nvme_for_each_subsystem(h, s) {
+			nvme_subsystem_for_each_ctrl(s, c) {
+				if (nvme_ctrl_match_cfg(c, cfg)) {
+					nvme_unlink_ctrl(c);
+					goto found;
+				}
 			}
 		}
 	}
@@ -545,6 +548,7 @@ int nvmf_disconnect(const char *desc, int argc, char **argv)
 {
 	const char *nqn = "nvme qualified name";
 	const char *device = "nvme device handle";
+	nvme_host_t h;
 	nvme_subsystem_t s;
 	nvme_root_t r;
 	nvme_ctrl_t c;
@@ -584,10 +588,12 @@ int nvmf_disconnect(const char *desc, int argc, char **argv)
 			if (!r)
 				continue;
 
-			nvme_for_each_subsystem(r, s) {
-				nvme_subsystem_for_each_ctrl(s, c) {
-					if (!nvme_ctrl_disconnect(c))
-						i++;
+			nvme_for_each_host(r, h) {
+				nvme_for_each_subsystem(h, s) {
+					nvme_subsystem_for_each_ctrl(s, c) {
+						if (!nvme_ctrl_disconnect(c))
+							i++;
+					}
 				}
 			}
 			nvme_free_tree(r);
@@ -624,6 +630,7 @@ int nvmf_disconnect(const char *desc, int argc, char **argv)
 
 int nvmf_disconnect_all(const char *desc, int argc, char **argv)
 {
+	nvme_host_t h;
 	nvme_subsystem_t s;
 	nvme_root_t r;
 	nvme_ctrl_t c;
@@ -650,19 +657,21 @@ int nvmf_disconnect_all(const char *desc, int argc, char **argv)
 		return errno;
 	}
 
-	nvme_for_each_subsystem(r, s) {
-		nvme_subsystem_for_each_ctrl(s, c) {
-			if (cfg.transport &&
-			    strcmp(cfg.transport,
-				   nvme_ctrl_get_transport(c)))
-				continue;
-			else if (!strcmp(nvme_ctrl_get_transport(c),
-					 "pcie"))
-				continue;
-			if (nvme_ctrl_disconnect(c))
-				nvme_msg(LOG_ERR,
-					 "failed to disconnect %s\n",
-					 nvme_ctrl_get_name(c));
+	nvme_for_each_host(r, h) {
+		nvme_for_each_subsystem(h, s) {
+			nvme_subsystem_for_each_ctrl(s, c) {
+				if (cfg.transport &&
+				    strcmp(cfg.transport,
+					   nvme_ctrl_get_transport(c)))
+					continue;
+				else if (!strcmp(nvme_ctrl_get_transport(c),
+						 "pcie"))
+					continue;
+				if (nvme_ctrl_disconnect(c))
+					nvme_msg(LOG_ERR,
+						 "failed to disconnect %s\n",
+						 nvme_ctrl_get_name(c));
+			}
 		}
 	}
 	nvme_free_tree(r);
