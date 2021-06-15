@@ -70,12 +70,12 @@ static const char *nvmf_hdr_digest	= "enable transport protocol header digest (T
 static const char *nvmf_data_digest	= "enable transport protocol data digest (TCP transport)";
 
 #define NVMF_OPTS(c)									\
-	OPT_STRING("transport",       't', "STR", (char *)&c.transport,	nvmf_tport), \
-	OPT_STRING("traddr",          'a', "STR", (char *)&c.traddr,	nvmf_traddr), \
-	OPT_STRING("trsvcid",         's', "STR", (char *)&c.trsvcid,	nvmf_trsvcid), \
-	OPT_STRING("host-traddr",     'w', "STR", (char *)&c.host_traddr,	nvmf_htraddr), \
-	OPT_STRING("hostnqn",         'q', "STR", (char *)&c.hostnqn,	nvmf_hostnqn), \
-	OPT_STRING("hostid",          'I', "STR", (char *)&c.hostid,	nvmf_hostid), \
+	OPT_STRING("transport",       't', "STR", &transport,	nvmf_tport), \
+	OPT_STRING("traddr",          'a', "STR", &traddr,	nvmf_traddr), \
+	OPT_STRING("trsvcid",         's', "STR", &trsvcid,	nvmf_trsvcid), \
+	OPT_STRING("host-traddr",     'w', "STR", &host_traddr,	nvmf_htraddr), \
+	OPT_STRING("hostnqn",         'q', "STR", &hostnqn,	nvmf_hostnqn), \
+	OPT_STRING("hostid",          'I', "STR", &hostid,	nvmf_hostid), \
 	OPT_INT("nr-io-queues",       'i', &c.nr_io_queues,       nvmf_nr_io_queues),	\
 	OPT_INT("nr-write-queues",    'W', &c.nr_write_queues,    nvmf_nr_write_queues),\
 	OPT_INT("nr-poll-queues",     'P', &c.nr_poll_queues,     nvmf_nr_poll_queues),	\
@@ -226,6 +226,8 @@ static int __discover(nvme_ctrl_t c, const struct nvme_fabrics_config *defcfg,
 		      enum nvme_print_flags flags)
 {
 	struct nvmf_discovery_log *log = NULL;
+	nvme_subsystem_t s = nvme_ctrl_get_subsystem(c);
+	nvme_host_t h = nvme_subsystem_get_host(s);
 	uint64_t numrec;
 	int ret;
 
@@ -257,15 +259,17 @@ static int __discover(nvme_ctrl_t c, const struct nvme_fabrics_config *defcfg,
 			nvme_ctrl_t child;
 
 			errno = 0;
-			child = nvmf_connect_disc_entry(e, defcfg, &discover);
+			child = nvmf_connect_disc_entry(h, e, defcfg,
+							&discover);
 			if (child) {
 				if (discover)
 					__discover(child, defcfg, raw,
 						   persistent, quiet,
 						   true, flags);
-				if (!persistent)
-					nvme_ctrl_disconnect(c);
-				nvme_free_ctrl(child);
+				if (!persistent) {
+					nvme_ctrl_disconnect(child);
+					nvme_free_ctrl(child);
+				}
 			} else if (errno == EALREADY && !quiet) {
 				char *traddr = log->entries[i].traddr;
 
@@ -281,14 +285,19 @@ static int __discover(nvme_ctrl_t c, const struct nvme_fabrics_config *defcfg,
 	return 0;
 }
 
-static int discover_from_conf_file(const char *desc, bool connect,
-	const struct nvme_fabrics_config *defcfg)
+static int discover_from_conf_file(nvme_host_t h, const char *desc,
+	bool connect, const struct nvme_fabrics_config *defcfg)
 {
+	char *transport = NULL, *traddr = NULL, *trsvcid = NULL;
+	char *host_traddr = NULL, *hostnqn = NULL, *hostid = NULL;
 	char *ptr, **argv, *p, line[4096];
 	int argc, ret = 0;
 	FILE *f;
 
-	struct nvme_fabrics_config cfg = { 0 };
+	struct nvme_fabrics_config cfg = {
+		.tos = -1,
+		.ctrl_loss_tmo = NVMF_DEF_CTRL_LOSS_TMO,
+	};
 
 	OPT_ARGS(opts) = {
 		NVMF_OPTS(cfg),
@@ -325,12 +334,16 @@ static int discover_from_conf_file(const char *desc, bool connect,
 		if (ret)
 			goto next;
 
-		if (!cfg.transport && !cfg.traddr)
+		if (!transport && !traddr)
 			goto next;
 
+		c = nvme_create_ctrl(NVME_DISC_SUBSYS_NAME, transport,
+				     traddr, host_traddr, trsvcid);
+		if (!c)
+			goto next;
 		errno = 0;
-		c = nvmf_add_ctrl(&cfg);
-		if (c) {
+		ret = nvmf_add_ctrl(h, c, &cfg);
+		if (!ret) {
 			__discover(c, defcfg, NULL, persistent, quiet,
 				   connect, 0);
 				return 0;
@@ -347,88 +360,20 @@ out:
 	return ret;
 }
 
-const static char *nqn_match;
-static bool nvme_match_subsysnqn_filter(nvme_subsystem_t s)
-{
-	if (nqn_match && strlen(nqn_match))
-		return strcmp(nvme_subsystem_get_nqn(s), nqn_match) == 0;
-	return true;
-}
-
-static bool nvme_ctrl_match_cfg(nvme_ctrl_t c, struct nvme_fabrics_config *cfg)
-{
-	const int size = 0x100;
-	char addr[size];
-	const char *a, *n, *t;
-	int len = 0;
-
-	if (!c)
-		return false;
-
-	a = nvme_ctrl_get_address(c);
-	n = nvme_ctrl_get_subsysnqn(c);
-	t = nvme_ctrl_get_transport(c);
-
-	memset(addr, 0, size);
-	if (cfg->traddr)
-                len += snprintf(addr, size, "traddr=%s", cfg->traddr);
-	if (cfg->trsvcid)
-                len += snprintf(addr + len, size - len, "%strsvcid=%s",
-                                len ? "," : "", cfg->trsvcid);
-	if (cfg->host_traddr)
-                len += snprintf(addr + len, size - len, "%shost_traddr=%s",
-                                len ? "," : "", cfg->host_traddr);
-
-	if (t && cfg->transport)
-		if (strcmp(t, cfg->transport))
-			return false;
-
-	if (n && cfg->nqn)
-		if (strcmp(n, cfg->nqn))
-			return false;
-
-	if (a && strlen(addr))
-		if (strcmp(a, addr))
-			return false;
-
-	return true;
-}
-
-static nvme_ctrl_t nvme_find_matching_ctrl(struct nvme_fabrics_config *cfg)
-{
-	nvme_host_t h;
-	nvme_subsystem_t s;
-	nvme_root_t r;
-	nvme_ctrl_t c;
-
-	nqn_match = cfg->nqn;
-	r = nvme_scan_filter(nvme_match_subsysnqn_filter);
-	nvme_for_each_host(r, h) {
-		nvme_for_each_subsystem(h, s) {
-			nvme_subsystem_for_each_ctrl(s, c) {
-				if (nvme_ctrl_match_cfg(c, cfg)) {
-					nvme_unlink_ctrl(c);
-					goto found;
-				}
-			}
-		}
-	}
-found:
-	nvme_free_tree(r);
-	if (!c)
-		nvme_msg(LOG_ERR, "no NVMe controller(s) detected.\n");
-	return c;
-}
-
 int nvmf_discover(const char *desc, int argc, char **argv, bool connect)
 {
+	char *nqn = NVME_DISC_SUBSYS_NAME;
+	char *host_traddr = NULL, *hostnqn = NULL, *hostid = NULL;
+	char *transport = NULL, *traddr = NULL, *trsvcid = NULL;
 	char *hnqn = NULL, *hid = NULL;
 	enum nvme_print_flags flags;
+	nvme_root_t r;
+	nvme_host_t h;
 	int ret;
 	char *format = "normal";
+	const char *tmp_device;
 
 	struct nvme_fabrics_config cfg = {
-		.nqn = NVME_DISC_SUBSYS_NAME,
 		.tos = -1,
 	};
 
@@ -452,35 +397,42 @@ int nvmf_discover(const char *desc, int argc, char **argv, bool connect)
 	if (ret < 0)
 		return ret;
 
+	r = nvme_scan();
 	if (persistent && !cfg.keep_alive_tmo)
 		cfg.keep_alive_tmo = 30;
-	if (!cfg.hostnqn)
-		cfg.hostnqn = hnqn = nvmf_hostnqn_from_file();
+	if (!hostnqn)
+		hostnqn = hnqn = nvmf_hostnqn_from_file();
+	if (!hostid)
+		hostid = hid = nvmf_hostid_from_file();
+	h = nvme_lookup_host(r, hostnqn, hostid);
+	if (!h) {
+		ret = ENOMEM;
+		goto out_free;
+	}
 	if (device && !strcmp(device, "none"))
 		device = NULL;
 
-	if (!device && !cfg.transport && !cfg.traddr)
-		ret = discover_from_conf_file(desc, connect, &cfg);
+	if (!device && !transport && !traddr)
+		ret = discover_from_conf_file(h, desc, connect, &cfg);
 	else {
-		nvme_ctrl_t c = NULL;
+		nvme_ctrl_t c;
 
-		if (device) {
-			c = nvme_scan_ctrl(device);
-			if (c && !nvme_ctrl_match_cfg(c, &cfg)) {
-				nvme_free_ctrl(c);
-				device = NULL;
-				c = NULL;
-			}
-			if (!c)
-				c = nvme_find_matching_ctrl(&cfg);
-		}
-
+		c = nvme_create_ctrl(nqn, transport, traddr,
+				     host_traddr, trsvcid);
 		if (!c) {
+			ret = ENOMEM;
+			goto out_free;
+		}
+		tmp_device = nvme_ctrl_get_name(c);
+		if (!tmp_device) {
 			errno = 0;
-			c = nvmf_add_ctrl(&cfg);
+			ret = nvmf_add_ctrl(h, c, &cfg);
+		} else if (strcmp(tmp_device, device)) {
+			device = NULL;
+			ret = 0;
 		}
 
-		if (c) {
+		if (!ret) {
 			ret = __discover(c, &cfg, raw, connect,
 					 persistent, quiet, flags);
 			if (!device && !persistent)
@@ -489,9 +441,10 @@ int nvmf_discover(const char *desc, int argc, char **argv, bool connect)
 		} else {
 			nvme_msg(LOG_ERR, "no controller found\n");
 			ret = errno;
+			nvme_free_ctrl(c);
 		}
 	}
-
+out_free:
 	if (hnqn)
 		free(hnqn);
 	if (hid)
@@ -502,14 +455,22 @@ int nvmf_discover(const char *desc, int argc, char **argv, bool connect)
 
 int nvmf_connect(const char *desc, int argc, char **argv)
 {
+	char *hnqn = NULL, *hid = NULL;
+	char *subsysnqn = NULL;
+	char *transport = NULL, *traddr = NULL, *host_traddr = NULL;
+	char *trsvcid = NULL, *hostnqn = NULL, *hostid = NULL;
+	nvme_root_t r;
+	nvme_host_t h;
+	nvme_ctrl_t c;
 	int ret;
 
 	struct nvme_fabrics_config cfg = {
 		.tos = -1,
+		.ctrl_loss_tmo = NVMF_DEF_CTRL_LOSS_TMO,
 	};
 
 	OPT_ARGS(opts) = {
-		OPT_STRING("nqn", 'n', "NAME", &cfg.nqn, nvmf_nqn),
+		OPT_STRING("nqn", 'n', "NAME", &subsysnqn, nvmf_nqn),
 		NVMF_OPTS(cfg),
 		OPT_END()
 	};
@@ -518,39 +479,63 @@ int nvmf_connect(const char *desc, int argc, char **argv)
 	if (ret)
 		return ret;
 
-	if (!cfg.nqn) {
+	if (!subsysnqn) {
 		nvme_msg(LOG_ERR,
 			 "required argument [--nqn | -n] not specified\n");
 		return EINVAL;
 	}
 
-	if (!cfg.transport) {
+	if (!transport) {
 		nvme_msg(LOG_ERR,
 			 "required argument [--transport | -t] not specified\n");
 		return EINVAL;
 	}
 
-	if (strcmp(cfg.transport, "loop")) {
-		if (!cfg.traddr) {
+	if (strcmp(transport, "loop")) {
+		if (!traddr) {
 			nvme_msg(LOG_ERR,
 				 "required argument [--address | -a] not specified for transport %s\n",
-				 cfg.transport);
+				 transport);
 			return EINVAL;
 		}
 	}
 
+	r = nvme_scan();
+	if (!hostnqn)
+		hostnqn = hnqn = nvmf_hostnqn_from_file();
+	if (!hostid)
+		hostid = hid = nvmf_hostid_from_file();
+	h = nvme_lookup_host(r, hostnqn, hostid);
+	if (!h) {
+		errno = ENOMEM;
+		goto out_free;
+	}
+	c = nvme_create_ctrl(subsysnqn, transport, traddr,
+			     host_traddr, trsvcid);
+	if (!c) {
+		errno = ENOMEM;
+		goto out_free;
+	}
+
 	errno = 0;
-	nvmf_add_ctrl_opts(&cfg);
+	ret = nvmf_add_ctrl(h, c, &cfg);
+	if (ret)
+		nvme_msg(LOG_ERR, "no controller found\n");
+out_free:
+	if (hnqn)
+		free(hnqn);
+	if (hid)
+		free(hid);
+	nvme_free_tree(r);
 	return errno;
 }
 
 int nvmf_disconnect(const char *desc, int argc, char **argv)
 {
-	const char *nqn = "nvme qualified name";
 	const char *device = "nvme device handle";
+	nvme_root_t r;
 	nvme_host_t h;
 	nvme_subsystem_t s;
-	nvme_root_t r;
 	nvme_ctrl_t c;
 	char *p;
 	int ret;
@@ -563,7 +548,7 @@ int nvmf_disconnect(const char *desc, int argc, char **argv)
 	struct config cfg = { 0 };
 
 	OPT_ARGS(opts) = {
-		OPT_STRING("nqn",    'n', "NAME", &cfg.nqn,    nqn),
+		OPT_STRING("nqn",    'n', "NAME", &cfg.nqn,    nvmf_nqn),
 		OPT_STRING("device", 'd', "DEV",  &cfg.device, device),
 		OPT_END()
 	};
@@ -577,28 +562,25 @@ int nvmf_disconnect(const char *desc, int argc, char **argv)
 			 "Neither device name [--device | -d] nor NQN [--nqn | -n] provided\n");
 		return EINVAL;
 	}
-
+	r = nvme_scan();
 	if (cfg.nqn) {
 		int i = 0;
 		char *n = cfg.nqn;
 
 		while ((p = strsep(&n, ",")) != NULL) {
-			nqn_match = p;
-			r = nvme_scan_filter(nvme_match_subsysnqn_filter);
-			if (!r)
+			if (!strlen(p))
 				continue;
-
 			nvme_for_each_host(r, h) {
 				nvme_for_each_subsystem(h, s) {
+					if (strcmp(nvme_subsystem_get_nqn(s), p))
+						continue;
 					nvme_subsystem_for_each_ctrl(s, c) {
 						if (!nvme_ctrl_disconnect(c))
 							i++;
 					}
 				}
 			}
-			nvme_free_tree(r);
 		}
-
 		printf("NQN:%s disconnected %d controller(s)\n", cfg.nqn, i);
 	}
 
@@ -607,10 +589,11 @@ int nvmf_disconnect(const char *desc, int argc, char **argv)
 
 		d = cfg.device;
 		while ((p = strsep(&d, ",")) != NULL) {
-			c = nvme_scan_ctrl(p);
+			c = nvme_scan_ctrl(r, p);
 			if (!c) {
 				nvme_msg(LOG_ERR,
 					 "Did not find device: %s\n", p);
+				nvme_free_tree(r);
 				return errno;
 			}
 			ret = nvme_ctrl_disconnect(c);
@@ -621,9 +604,9 @@ int nvmf_disconnect(const char *desc, int argc, char **argv)
 				nvme_msg(LOG_ERR,
 					 "Failed to disconnect %s: %s\n",
 					 nvme_ctrl_get_name(c), strerror(errno));
-			nvme_free_ctrl(c);
 		}
 	}
+	nvme_free_tree(r);
 
 	return 0;
 }

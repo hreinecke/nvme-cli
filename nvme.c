@@ -1790,7 +1790,7 @@ static int list_subsys(int argc, char **argv, struct command *cmd,
 	if (devicename)
 		r = nvme_scan_filter(nvme_match_device_filter);
 	else
-		r = nvme_scan(NULL);
+		r = nvme_scan();
 
 	if (r) {
 		nvme_show_subsystem_list(r, flags);
@@ -1848,7 +1848,7 @@ static int list(int argc, char **argv, struct command *cmd, struct plugin *plugi
 	if (cfg.verbose)
 		flags |= VERBOSE;
 
-	r = nvme_scan(NULL);
+	r = nvme_scan();
 	if (r) {
 		nvme_show_list_items(r, flags);
 		nvme_free_tree(r);
@@ -3172,7 +3172,7 @@ static void *mmap_registers(nvme_root_t r, const char *dev)
 	void *membase;
 	int fd;
 
-	c = nvme_scan_ctrl(devicename);
+	c = nvme_scan_ctrl(r, devicename);
 	if (c) {
 		snprintf(path, sizeof(path), "%s/device/resource0",
 			nvme_ctrl_get_sysfs_dir(c));
@@ -3239,7 +3239,7 @@ static int show_registers(int argc, char **argv, struct command *cmd, struct plu
 	if (fd < 0)
 		goto ret;
 
-	r = nvme_scan(NULL);
+	r = nvme_scan();
 	err = flags = validate_output_format(cfg.output_format);
 	if (flags < 0)
 		goto close_fd;
