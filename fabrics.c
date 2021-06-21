@@ -227,9 +227,9 @@ static void save_discovery_log(char *raw, struct nvmf_discovery_log *log)
 	close(fd);
 }
 
-static int __discover(nvme_ctrl_t c, const struct nvme_fabrics_config *defcfg,
-		      char *raw, bool connect, bool persistent,
-		      enum nvme_print_flags flags)
+int nvmf_do_discover(nvme_ctrl_t c, const struct nvme_fabrics_config *defcfg,
+		     char *raw, bool connect, bool persistent,
+		     enum nvme_print_flags flags)
 {
 	struct nvmf_discovery_log *log = NULL;
 	nvme_subsystem_t s = nvme_ctrl_get_subsystem(c);
@@ -269,9 +269,9 @@ static int __discover(nvme_ctrl_t c, const struct nvme_fabrics_config *defcfg,
 							&discover);
 			if (child) {
 				if (discover)
-					__discover(child, defcfg, raw,
-						   persistent,
-						   true, flags);
+					nvmf_do_discover(child, defcfg, raw,
+							 persistent,
+							 true, flags);
 				if (!persistent) {
 					nvme_ctrl_disconnect(child);
 					nvme_free_ctrl(child);
@@ -351,10 +351,9 @@ static int discover_from_conf_file(nvme_host_t h, const char *desc,
 		errno = 0;
 		ret = nvmf_add_ctrl(h, c, &cfg, false);
 		if (!ret) {
-			__discover(c, defcfg, NULL, persistent,
-				   connect, 0);
-				return 0;
-			if (!persistent)
+			ret = nvmf_do_discover(c, defcfg, NULL, persistent,
+					       connect, 0);
+			if (ret || !persistent)
 				ret = nvme_ctrl_disconnect(c);
 			nvme_free_ctrl(c);
 		}
@@ -464,8 +463,8 @@ int nvmf_discover(const char *desc, int argc, char **argv, bool connect)
 		}
 
 		if (!ret) {
-			ret = __discover(c, &cfg, raw, connect,
-					 persistent, flags);
+			ret = nvmf_do_discover(c, &cfg, raw, connect,
+					    persistent, flags);
 			if (!device && !persistent)
 				nvme_ctrl_disconnect(c);
 			nvme_free_ctrl(c);
