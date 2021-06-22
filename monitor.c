@@ -201,14 +201,11 @@ static int monitor_get_fc_uev_props(struct udev_device *ud,
 	return 0;
 }
 
-static int monitor_discovery(nvme_host_t h, char *transport,
-			     char *traddr, char *host_traddr, char *trsvcid,
-			     const char *devname)
+static int monitor_discovery(nvme_host_t h, nvme_ctrl_t c)
 {
 	pid_t pid;
 	int rc;
 	char *device = NULL;
-	nvme_ctrl_t c = NULL;
 	struct nvme_fabrics_config fabrics_cfg = {
 		.tos = -1,
 	};
@@ -227,24 +224,6 @@ static int monitor_discovery(nvme_host_t h, char *transport,
 	free_dispatcher(mon_dsp);
 
 	nvme_msg(LOG_NOTICE, "starting discovery\n");
-	/*
-	 * Try to re-use existing controller. do_discovery() will check
-	 * if it matches the connection parameters.
-	 */
-	if (devname)
-		c = nvme_scan_ctrl(nvme_host_get_root(h), devname);
-	if (!c) {
-		c = nvme_create_ctrl(NVME_DISC_SUBSYS_NAME, transport, traddr,
-				     host_traddr, NULL, trsvcid);
-		devname = NULL;
-	}
-	if (!c) {
-		nvme_msg(LOG_ERR, "Failed to allocate discovery controller\n");
-		exit(-ENOMEM);
-	}
-
-	if (devname)
-		nvme_msg(LOG_INFO, "using discovery controller %s\n", devname);
 
 	rc = nvmf_add_ctrl(h, c, &fabrics_cfg, false);
 	if (rc) {
@@ -267,6 +246,7 @@ static int monitor_discovery(nvme_host_t h, char *transport,
 
 static void monitor_handle_fc_uev(nvme_host_t h, struct udev_device *ud)
 {
+	nvme_ctrl_t c;
 	const char *action = udev_device_get_action(ud);
 	const char *sysname = udev_device_get_sysname(ud);
 	char traddr[NVMF_TRADDR_SIZE], host_traddr[NVMF_TRADDR_SIZE];
@@ -278,7 +258,14 @@ static void monitor_handle_fc_uev(nvme_host_t h, struct udev_device *ud)
 				     host_traddr, sizeof(host_traddr)))
 		return;
 
-	monitor_discovery(h, "fc", traddr, host_traddr, NULL, NULL);
+	c = nvme_create_ctrl(NVME_DISC_SUBSYS_NAME, "fc", traddr,
+			     host_traddr, NULL, NULL);
+	if (!c) {
+		nvme_msg(LOG_ERR, "Failed to allocate discovery controller\n");
+		exit(-ENOMEM);
+	}
+
+	monitor_discovery(h, c);
 }
 
 static int monitor_get_nvme_uev_props(struct udev_device *ud,
@@ -335,6 +322,8 @@ static void monitor_handle_nvme_uev(nvme_host_t h, struct udev_device *ud)
 {
 	char traddr[NVMF_TRADDR_SIZE], host_traddr[NVMF_TRADDR_SIZE];
 	char trsvcid[NVMF_TRSVCID_SIZE], transport[5];
+	const char *devname = udev_device_get_sysname(ud);
+	nvme_ctrl_t c = NULL;
 
 	if (strcmp(udev_device_get_action(ud), "change"))
 		return;
@@ -345,9 +334,37 @@ static void monitor_handle_nvme_uev(nvme_host_t h, struct udev_device *ud)
 				       host_traddr, sizeof(host_traddr)))
 		return;
 
-	monitor_discovery(h, transport, traddr, host_traddr,
-			  strcmp(trsvcid, "none") ? trsvcid : NULL,
-			  udev_device_get_sysname(ud));
+	/*
+	 * Try to re-use existing controller. do_discovery() will check
+	 * if it matches the connection parameters.
+	 */
+	if (devname) {
+		c = nvme_scan_ctrl(nvme_host_get_root(h), devname);
+		if (strcmp(nvme_ctrl_get_transport(c), transport) ||
+		    strcmp(nvme_ctrl_get_subsysnqn(c), NVME_DISC_SUBSYS_NAME) ||
+		    strcmp(nvme_ctrl_get_traddr(c), traddr) ||
+		    strcmp(nvme_ctrl_get_host_traddr(c), host_traddr)) {
+			nvme_msg(LOG_ERR, "Non-matching controller %s, ignoring\n",
+				 devname);
+			nvme_free_ctrl(c);
+			c = NULL;
+		}
+	}
+	if (!c) {
+		c = nvme_create_ctrl(NVME_DISC_SUBSYS_NAME, transport, traddr,
+				     host_traddr, NULL, trsvcid);
+		devname = NULL;
+		if (!c) {
+			nvme_msg(LOG_ERR,
+				 "Failed to allocate discovery controller\n");
+			exit(-ENOMEM);
+		}
+	}
+
+	if (devname)
+		nvme_msg(LOG_INFO, "using discovery controller %s\n", devname);
+
+	monitor_discovery(h, c);
 }
 
 static void monitor_handle_udevice(nvme_host_t h, struct udev_device *ud)
