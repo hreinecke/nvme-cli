@@ -57,6 +57,7 @@
 #endif
 
 #define NVMF_HOSTID_SIZE	36
+#define NVMF_HOSTKEY_SIZE	128
 
 /* default to 600 seconds of reconnect attempts before giving up */
 #define NVMF_DEF_CTRL_LOSS_TMO		600
@@ -93,6 +94,7 @@ struct connect_args *tracked_ctrls;
 #define PATH_NVMF_DISC		"/etc/nvme/discovery.conf"
 #define PATH_NVMF_HOSTNQN	"/etc/nvme/hostnqn"
 #define PATH_NVMF_HOSTID	"/etc/nvme/hostid"
+#define PATH_NVMF_HOSTKEY	"/etc/nvme/hostkey"
 #define MAX_DISC_ARGS		10
 #define MAX_DISC_RETRIES	10
 
@@ -943,6 +945,29 @@ out:
 	return ret;
 }
 
+static int nvmf_hostkey_file(void)
+{
+	FILE *f;
+	char hostkey[NVMF_HOSTKEY_SIZE + 1];
+	int ret = false;
+
+	f = fopen(PATH_NVMF_HOSTKEY, "r");
+	if (f == NULL)
+		return false;
+
+	if (fgets(hostkey, sizeof(hostkey), f) == NULL)
+		goto out;
+
+	fabrics_cfg.dhchap_secret = strdup(hostkey);
+	if (!fabrics_cfg.dhchap_secret)
+		goto out;
+
+	ret = true;
+out:
+	fclose(f);
+	return ret;
+}
+
 static int
 add_bool_argument(char **argstr, int *max_len, char *arg_str, bool arg)
 {
@@ -1027,6 +1052,8 @@ int build_options(char *argstr, int max_len, bool discover)
 		    add_argument(&argstr, &max_len, "hostnqn", fabrics_cfg.hostnqn)) ||
 	    ((fabrics_cfg.hostid || nvmf_hostid_file()) &&
 		    add_argument(&argstr, &max_len, "hostid", fabrics_cfg.hostid)) ||
+	    ((fabrics_cfg.dhchap_secret || nvmf_hostkey_file()) &&
+		    add_argument(&argstr, &max_len, "dhchap_secret", fabrics_cfg.dhchap_secret)) ||
 	    (!discover &&
 	      add_int_argument(&argstr, &max_len, "nr_io_queues",
 				fabrics_cfg.nr_io_queues, false)) ||
