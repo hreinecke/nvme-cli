@@ -7895,49 +7895,59 @@ static int gen_dhchap_key(int argc, char **argv, struct command *command, struct
 	if (err)
 		return err;
 
-	if (cfg.hmac > 3) {
+	if (cfg.hmac < 0) {
 		fprintf(stderr, "Invalid HMAC identifier %u\n", cfg.hmac);
 		return -EINVAL;
 	}
 	if (cfg.hmac > 0) {
 		switch (cfg.hmac) {
 		case 1:
+			/* fallthrough */
+		case 256:
 			if (!cfg.key_len)
 				cfg.key_len = 32;
-			else if (cfg.key_len != 32) {
+			else if (cfg.key_len < 30 || cfg.key_len > 32) {
+				/* RFC7919 mandates at least 225 bits */
 				fprintf(stderr, "Invalid key length %d for SHA(256)\n",
 					cfg.key_len);
 				return -EINVAL;
 			}
 			break;
 		case 2:
+			/* fallthrough */
+		case 384:
 			if (!cfg.key_len)
 				cfg.key_len = 48;
-			else if (cfg.key_len != 48) {
+			else if (cfg.key_len < 34 || cfg.key_len > 48) {
+				/* RFC7919 mandates at least 275 bits */
 				fprintf(stderr, "Invalid key length %d for SHA(384)\n",
 					cfg.key_len);
 				return -EINVAL;
 			}
 			break;
 		case 3:
+			/* fallthough */
+		case 512:
 			if (!cfg.key_len)
 				cfg.key_len = 64;
-			else if (cfg.key_len != 64) {
+			else if (cfg.key_len < 42 || cfg.key_len > 64) {
+				/* RFC7919 mandates at least 325 bits */
 				fprintf(stderr, "Invalid key length %d for SHA(512)\n",
 					cfg.key_len);
 				return -EINVAL;
 			}
 			break;
 		default:
+			if (cfg.key_len < 32 || cfg.key_len > 64) {
+				fprintf(stderr, "Invalid key length %u\n",
+					cfg.key_len);
+				return -EINVAL;
+			}
 			break;
 		}
 	} else if (!cfg.key_len)
 		cfg.key_len = 32;
 
-	if (cfg.key_len != 32 && cfg.key_len != 48 && cfg.key_len != 64) {
-		fprintf(stderr, "Invalid key length %u\n", cfg.key_len);
-		return -EINVAL;
-	}
 	raw_secret = malloc(cfg.key_len);
 	if (!raw_secret)
 		return -ENOMEM;
@@ -8036,13 +8046,13 @@ static int check_dhchap_key(int argc, char **argv, struct command *command, stru
 		}
 		break;
 	case 2:
-		if (strlen(cfg.key) != 83) {
+		if (strlen(cfg.key) < 59 || strlen(cfg.key) > 83) {
 			fprintf(stderr, "Invalid key length for SHA(384)\n");
 			return -EINVAL;
 		}
 		break;
 	case 3:
-		if (strlen(cfg.key) != 103) {
+		if (strlen(cfg.key) < 59 || strlen(cfg.key) > 103) {
 			fprintf(stderr, "Invalid key length for SHA(512)\n");
 			return -EINVAL;
 		}
@@ -8061,13 +8071,13 @@ static int check_dhchap_key(int argc, char **argv, struct command *command, stru
 		return err;
 	}
 	decoded_len = err;
-	if (decoded_len < 32) {
+	if (decoded_len <= 0) {
 		fprintf(stderr, "Base64 decoding failed (%s, size %u)\n",
 			cfg.key + 10, decoded_len);
 		return -EINVAL;
 	}
 	decoded_len -= 4;
-	if (decoded_len != 32 && decoded_len != 48 && decoded_len != 64) {
+	if (decoded_len < 32 || decoded_len > 64) {
 		fprintf(stderr, "Invalid key length %d\n", decoded_len);
 		return -EINVAL;
 	}
