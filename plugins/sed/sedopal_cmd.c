@@ -551,3 +551,45 @@ int sedopal_cmd_discover(int fd)
 	return -EOPNOTSUPP;
 #endif
 }
+
+int sedopal_cmd_ranges(int fd)
+{
+	int rc, i;
+	struct opal_geometry geo;
+	struct opal_key key;
+	struct opal_lr_status lrs = {};
+	unsigned long block_bytes;
+
+	rc = ioctl(fd, IOC_OPAL_GET_GEOMETRY, &geo);
+	if (rc < 0)
+		return rc;
+
+	block_bytes = geo.logical_block_size / 512;
+
+	sedopal_ask_key = true;
+	rc = sedopal_set_key(&key);
+	if (rc != 0)
+		return rc;
+
+	memset(&lrs, 0, sizeof(lrs));
+	lrs.session.who = OPAL_ADMIN1;
+	lrs.session.opal_key = key;
+	for (i = 0; i < OPAL_MAX_LRS; i++) {
+		lrs.session.opal_key.lr = i;
+
+		rc = ioctl(fd, IOC_OPAL_GET_LR_STATUS, lrs);
+		if (rc < 0) {
+			fprintf(stderr, "Error: failed to get locking range %d status, error %d\n", i, rc);
+			continue;
+		}
+		printf("Locking Range %d\n", i);
+		printf("\tStart: %llu\n",
+		       lrs.range_start * block_bytes);
+		printf("\tLength: %llu\n",
+		       lrs.range_length * block_bytes);
+		printf("\tStatus: read lock %s, write lock %s\n",
+		       lrs.RLE ? "enabled" : "disabled",
+		       lrs.WLE ? "enabled" : "disabled");
+	}
+	return 0;
+}

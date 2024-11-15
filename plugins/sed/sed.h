@@ -13,6 +13,7 @@ PLUGIN(NAME("sed", "SED Opal Command Set", NVME_VERSION),
 		ENTRY("lock", "Lock a SED Opal Device", sed_opal_lock)
 		ENTRY("unlock", "Unlock a SED Opal Device", sed_opal_unlock)
 		ENTRY("password", "Change the SED Opal Device password", sed_opal_password)
+		ENTRY("ranges", "Display SED locking ranges", sed_opal_ranges)
 	)
 );
 

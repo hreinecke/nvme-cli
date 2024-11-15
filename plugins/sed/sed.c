@@ -176,3 +176,23 @@ static int sed_opal_password(int argc, char **argv, struct command *cmd,
 	dev_close(dev);
 	return err;
 }
+
+static int sed_opal_ranges(int argc, char **argv, struct command *cmd,
+		struct plugin *plugin)
+{
+	int err;
+	const char *desc = "Display the locking ranges of a SED device";
+	struct nvme_dev *dev;
+
+	err = sed_opal_open_device(&dev, argc, argv, desc, no_opts);
+	if (err)
+		return err;
+
+	err = sedopal_cmd_ranges(dev->direct.fd);
+	if (err != 0)
+		fprintf(stderr, "ranges: SED error -  %s\n",
+				sedopal_error_to_text(err));
+
+	dev_close(dev);
+	return err;
+}

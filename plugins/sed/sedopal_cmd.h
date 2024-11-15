@@ -44,6 +44,7 @@ int sedopal_cmd_unlock(int fd);
 int sedopal_cmd_revert(int fd);
 int sedopal_cmd_password(int fd);
 int sedopal_cmd_discover(int fd);
+int sedopal_cmd_ranges(int fd);
 
 /*
  * utility functions
