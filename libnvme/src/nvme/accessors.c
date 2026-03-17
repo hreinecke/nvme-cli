@@ -398,6 +398,17 @@ const char *nvme_ctrl_get_dctype(const struct nvme_ctrl *p)
 	return p->dctype;
 }
 
+void nvme_ctrl_set_phy_slot(struct nvme_ctrl *p, const char *phy_slot)
+{
+	free(p->phy_slot);
+	p->phy_slot = phy_slot ? strdup(phy_slot) : NULL;
+}
+
+const char *nvme_ctrl_get_phy_slot(const struct nvme_ctrl *p)
+{
+	return p->phy_slot;
+}
+
 void nvme_ctrl_set_host_traddr(struct nvme_ctrl *p, const char *host_traddr)
 {
 	free(p->host_traddr);

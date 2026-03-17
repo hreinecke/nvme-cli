@@ -3,6 +3,4 @@
 nvme_ns::generic_name
 nvme_ctrl::state
 nvme_ctrl::address
-nvme_ctrl::phy_slot
 nvme_path::queue_depth
-

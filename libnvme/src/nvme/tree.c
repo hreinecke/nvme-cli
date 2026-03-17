@@ -902,12 +902,7 @@ char *nvme_ctrl_get_src_addr(nvme_ctrl_t c, char *src_addr, size_t src_addr_len)
 	return src_addr;
 }
 
-const char *nvme_ctrl_get_phy_slot(nvme_ctrl_t c)
-{
-	return c->phy_slot ? c->phy_slot : "";
-}
-
-const char *nvme_ctrl_get_state(nvme_ctrl_t c)
+qconst char *nvme_ctrl_get_state(nvme_ctrl_t c)
 {
 	char *state = c->state;
 
