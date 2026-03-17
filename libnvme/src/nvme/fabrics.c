@@ -2049,10 +2049,9 @@ const char *nvmf_get_default_trsvcid(const char *transport,
 
 static bool is_persistent_discovery_ctrl(nvme_host_t h, nvme_ctrl_t c)
 {
-	if (nvme_host_is_pdc_enabled(h, DEFAULT_PDC_ENABLED))
-		return nvme_ctrl_get_unique_discovery_ctrl(c);
-
-	return false;
+	if (nvme_host_get_pdc_enabled_valid(h))
+		return nvme_host_get_pdc_enabled(h);
+	return DEFAULT_PDC_ENABLED;
 }
 
 static int nvme_add_ctrl(struct nvmf_context *fctx,

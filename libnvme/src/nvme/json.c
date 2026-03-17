@@ -180,8 +180,11 @@ static void json_parse_host(struct nvme_global_ctx *ctx, struct json_object *hos
 	if (attr_obj)
 		nvme_host_set_hostsymname(h, json_object_get_string(attr_obj));
 	attr_obj = json_object_object_get(host_obj, "persistent_discovery_ctrl");
-	if (attr_obj)
-		nvme_host_set_pdc_enabled(h, json_object_get_boolean(attr_obj));
+	if (attr_obj) {
+		bool enabled = json_object_get_boolean(attr_obj);
+		nvme_host_set_pdc_enabled_valid(h, true);
+		nvme_host_set_pdc_enabled(h, enabled);
+	}
 	subsys_array = json_object_object_get(host_obj, "subsystems");
 	if (!subsys_array)
 		return;

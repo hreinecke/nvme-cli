@@ -377,6 +377,21 @@ void nvme_ctrl_set_transport(struct nvme_ctrl *p, const char *transport);
 const char *nvme_ctrl_get_transport(const struct nvme_ctrl *p);
 
 /**
+ * nvme_ctrl_set_subsysnqn() - Set subsysnqn.
+ * @p: The &struct nvme_ctrl instance to update.
+ * @subsysnqn: New string; a copy is stored. Pass NULL to clear.
+ */
+void nvme_ctrl_set_subsysnqn(struct nvme_ctrl *p, const char *subsysnqn);
+
+/**
+ * nvme_ctrl_get_subsysnqn() - Get subsysnqn.
+ * @p: The &struct nvme_ctrl instance to query.
+ *
+ * Return: The value of the subsysnqn field, or NULL if not set.
+ */
+const char *nvme_ctrl_get_subsysnqn(const struct nvme_ctrl *p);
+
+/**
  * nvme_ctrl_set_traddr() - Set traddr.
  * @p: The &struct nvme_ctrl instance to update.
  * @traddr: New string; a copy is stored. Pass NULL to clear.
@@ -840,6 +855,21 @@ void nvme_host_set_hostsymname(struct nvme_host *p, const char *hostsymname);
  * Return: The value of the hostsymname field, or NULL if not set.
  */
 const char *nvme_host_get_hostsymname(const struct nvme_host *p);
+
+/**
+ * nvme_host_set_pdc_enabled() - Set pdc_enabled.
+ * @p: The &struct nvme_host instance to update.
+ * @pdc_enabled: Value to assign to the pdc_enabled field.
+ */
+void nvme_host_set_pdc_enabled(struct nvme_host *p, bool pdc_enabled);
+
+/**
+ * nvme_host_get_pdc_enabled() - Get pdc_enabled.
+ * @p: The &struct nvme_host instance to query.
+ *
+ * Return: The value of the pdc_enabled field.
+ */
+bool nvme_host_get_pdc_enabled(const struct nvme_host *p);
 
 /**
  * nvme_host_set_pdc_enabled_valid() - Set pdc_enabled_valid.

@@ -86,6 +86,8 @@ LIBNVME_ACCESSORS_3 {
 		nvme_ctrl_set_discovered;
 		nvme_ctrl_get_persistent;
 		nvme_ctrl_set_persistent;
+		nvme_ctrl_get_subsysnqn;
+		nvme_ctrl_set_subsysnqn;
 		nvme_subsystem_get_name;
 		nvme_subsystem_set_name;
 		nvme_subsystem_get_sysfs_dir;
@@ -112,6 +114,8 @@ LIBNVME_ACCESSORS_3 {
 		nvme_host_set_dhchap_host_key;
 		nvme_host_get_hostsymname;
 		nvme_host_set_hostsymname;
+		nvme_host_get_pdc_enabled;
+		nvme_host_set_pdc_enabled;
 		nvme_host_get_pdc_enabled_valid;
 		nvme_host_set_pdc_enabled_valid;
 		nvme_fabric_options_get_cntlid;

@@ -13,7 +13,6 @@ LIBNVME_3 {
 		nvme_ctrl_get_phy_slot;
 		nvme_ctrl_get_src_addr;
 		nvme_ctrl_get_state;
-		nvme_ctrl_get_subsysnqn;
 		nvme_ctrl_get_subsystem;
 		nvme_ctrl_get_transport_handle;
 		nvme_ctrl_identify;
@@ -65,9 +64,7 @@ LIBNVME_3 {
 		nvme_get_host;
 		nvme_host_get_global_ctx;
 		nvme_host_get_ids;
-		nvme_host_is_pdc_enabled;
 		nvme_host_release_fds;
-		nvme_host_set_pdc_enabled;
 		nvme_read_hostid;
 		nvme_generate_hostid;
 		nvme_read_hostnqn;

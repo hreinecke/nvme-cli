@@ -92,28 +92,6 @@ nvme_host_t nvme_next_host(struct nvme_global_ctx *ctx, nvme_host_t h);
 struct nvme_global_ctx *nvme_host_get_global_ctx(nvme_host_t h);
 
 /**
- * nvme_host_set_pdc_enabled() - Set Persistent Discovery Controller flag
- * @h:		Host for which the falg should be set
- * @enabled:	The bool to set the enabled flag
- *
- * When nvme_host_set_pdc_enabled() is not used to set the PDC flag,
- * nvme_host_is_pdc_enabled() will return the default value which was
- * passed into the function and not the undefined flag value.
- */
-void nvme_host_set_pdc_enabled(nvme_host_t h, bool enabled);
-
-/**
- * nvme_host_is_pdc_enabled() - Is Persistenct Discovery Controller enabled
- * @h: 		Host which to check if PDC is enabled
- * @fallback:	The fallback default value of the flag when
- * 		@nvme_host_set_pdc_enabled has not be used
- * 		to set the flag.
- *
- * Return: true if PDC is enabled for @h, else false
- */
-bool nvme_host_is_pdc_enabled(nvme_host_t h, bool fallback);
-
-/**
  * nvme_get_host() - Returns a host object
  * @ctx:	struct nvme_global_ctx object
  * @hostnqn:	Host NQN (optional)
@@ -742,14 +720,6 @@ const char *nvme_ctrl_get_phy_slot(nvme_ctrl_t c);
  * Return: String indicating the running state of @c
  */
 const char *nvme_ctrl_get_state(nvme_ctrl_t c);
-
-/**
- * nvme_ctrl_get_subsysnqn() - Subsystem NQN of a controller
- * @c:	Controller instance
- *
- * Return: Subsystem NQN of @c
- */
-const char *nvme_ctrl_get_subsysnqn(nvme_ctrl_t c);
 
 /**
  * nvme_ctrl_get_subsystem() - Parent subsystem of a controller

@@ -389,19 +389,6 @@ struct nvme_global_ctx *nvme_host_get_global_ctx(nvme_host_t h)
 	return h->ctx;
 }
 
-void nvme_host_set_pdc_enabled(nvme_host_t h, bool enabled)
-{
-	h->pdc_enabled_valid = true;
-	h->pdc_enabled = enabled;
-}
-
-bool nvme_host_is_pdc_enabled(nvme_host_t h, bool fallback)
-{
-	if (h->pdc_enabled_valid)
-		return h->pdc_enabled;
-	return fallback;
-}
-
 nvme_subsystem_t nvme_first_subsystem(nvme_host_t h)
 {
 	return list_top(&h->subsystems, struct nvme_subsystem, entry);
@@ -887,12 +874,6 @@ void nvme_ctrl_release_transport_handle(nvme_ctrl_t c)
 nvme_subsystem_t nvme_ctrl_get_subsystem(nvme_ctrl_t c)
 {
 	return c->s;
-}
-
-
-const char *nvme_ctrl_get_subsysnqn(nvme_ctrl_t c)
-{
-	return c->s ? c->s->subsysnqn : c->subsysnqn;
 }
 
 char *nvme_ctrl_get_src_addr(nvme_ctrl_t c, char *src_addr, size_t src_addr_len)

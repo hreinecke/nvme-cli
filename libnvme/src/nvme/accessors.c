@@ -270,6 +270,17 @@ const char *nvme_ctrl_get_transport(const struct nvme_ctrl *p)
 	return p->transport;
 }
 
+void nvme_ctrl_set_subsysnqn(struct nvme_ctrl *p, const char *subsysnqn)
+{
+	free(p->subsysnqn);
+	p->subsysnqn = subsysnqn ? strdup(subsysnqn) : NULL;
+}
+
+const char *nvme_ctrl_get_subsysnqn(const struct nvme_ctrl *p)
+{
+	return p->subsysnqn;
+}
+
 void nvme_ctrl_set_traddr(struct nvme_ctrl *p, const char *traddr)
 {
 	free(p->traddr);
@@ -610,6 +621,16 @@ void nvme_host_set_hostsymname(struct nvme_host *p, const char *hostsymname)
 const char *nvme_host_get_hostsymname(const struct nvme_host *p)
 {
 	return p->hostsymname;
+}
+
+void nvme_host_set_pdc_enabled(struct nvme_host *p, bool pdc_enabled)
+{
+	p->pdc_enabled = pdc_enabled;
+}
+
+bool nvme_host_get_pdc_enabled(const struct nvme_host *p)
+{
+	return p->pdc_enabled;
 }
 
 void nvme_host_set_pdc_enabled_valid(
