@@ -917,8 +917,8 @@ __public int nvme_generate_tls_key_identity_compat(struct nvme_global_ctx *ctx,
 }
 
 #ifdef CONFIG_KEYUTILS
-__public int nvme_lookup_keyring(struct nvme_global_ctx *ctx, const char *keyring,
-		long *key)
+__public int nvme_lookup_keyring(struct nvme_global_ctx *ctx,
+				 const char *keyring, long *key)
 {
 	key_serial_t keyring_id;
 
@@ -932,7 +932,8 @@ __public int nvme_lookup_keyring(struct nvme_global_ctx *ctx, const char *keyrin
 	return 0;
 }
 
-__public char *nvme_describe_key_serial(struct nvme_global_ctx *ctx, long key_id)
+__public char *nvme_describe_key_serial(struct nvme_global_ctx *ctx,
+					long key_id)
 {
 	_cleanup_free_ char *str = NULL;
 	char *last;
@@ -952,14 +953,15 @@ __public char *nvme_describe_key_serial(struct nvme_global_ctx *ctx, long key_id
 }
 
 __public int nvme_lookup_key(struct nvme_global_ctx *ctx, const char *type,
-		const char *identity, long *keyp)
+		const char *identity, long *key)
 {
-	key_serial_t key;
+	key_serial_t key_id;
 
-	key = keyctl_search(KEY_SPEC_SESSION_KEYRING, type, identity, 0);
-	if (key < 0)
+	key_id = keyctl_search(KEY_SPEC_SESSION_KEYRING, type, identity, 0);
+	if (key_id < 0)
 		return -errno;
-	return key;
+	*key = key_id;
+	return 0;
 }
 
 __public int nvme_set_keyring(struct nvme_global_ctx *ctx, long key_id)
