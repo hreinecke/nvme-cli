@@ -202,6 +202,7 @@ struct nvme_ctrl { /*!generate-accessors*/
 	char *dhchap_ctrl_key;
 	char *keyring;
 	char *tls_key_identity;
+	char *tls_configured_key; //!accessors:readonly
 	char *tls_key;
 	char *cntrltype; //!accessors:readonly
 	char *cntlid; //!accessors:readonly
@@ -209,6 +210,10 @@ struct nvme_ctrl { /*!generate-accessors*/
 	char *phy_slot; //!accessors:readonly
 	char *host_traddr; //!accessors:readonly
 	char *host_iface; //!accessors:readonly
+	char *ctrl_loss_tmo;
+	char *reconnect_delay;
+	char *fast_io_fail_tmo;
+	char *kato;
 	bool discovery_ctrl;
 	bool unique_discovery_ctrl;
 	bool discovered;

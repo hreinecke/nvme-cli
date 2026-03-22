@@ -58,6 +58,7 @@ LIBNVME_ACCESSORS_3 {
 		nvme_ctrl_set_tls_key_identity;
 		nvme_ctrl_get_tls_key;
 		nvme_ctrl_set_tls_key;
+		nvme_ctrl_get_tls_configured_key;
 		nvme_ctrl_get_cntrltype;
 		nvme_ctrl_get_cntlid;
 		nvme_ctrl_get_dctype;
@@ -72,6 +73,14 @@ LIBNVME_ACCESSORS_3 {
 		nvme_ctrl_get_persistent;
 		nvme_ctrl_set_persistent;
 		nvme_ctrl_get_phy_slot;
+		nvme_ctrl_get_ctrl_loss_tmo;
+		nvme_ctrl_set_ctrl_loss_tmo;
+		nvme_ctrl_get_reconnect_delay;
+		nvme_ctrl_set_reconnect_delay;
+		nvme_ctrl_get_fast_io_fail_tmo;
+		nvme_ctrl_set_fast_io_fail_tmo;
+		nvme_ctrl_get_kato;
+		nvme_ctrl_set_kato;
 		nvme_subsystem_get_name;
 		nvme_subsystem_get_sysfs_dir;
 		nvme_subsystem_get_subsysnqn;
