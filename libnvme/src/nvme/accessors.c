@@ -289,6 +289,11 @@ __public const char *nvme_ctrl_get_tls_key_identity(const struct nvme_ctrl *p)
 	return p->tls_key_identity;
 }
 
+__public const char *nvme_ctrl_get_tls_configured_key(const struct nvme_ctrl *p)
+{
+	return p->tls_configured_key;
+}
+
 __public void nvme_ctrl_set_tls_key(struct nvme_ctrl *p, const char *tls_key)
 {
 	free(p->tls_key);
@@ -328,6 +333,57 @@ __public const char *nvme_ctrl_get_host_traddr(const struct nvme_ctrl *p)
 __public const char *nvme_ctrl_get_host_iface(const struct nvme_ctrl *p)
 {
 	return p->host_iface;
+}
+
+__public void nvme_ctrl_set_ctrl_loss_tmo(
+		struct nvme_ctrl *p,
+		const char *ctrl_loss_tmo)
+{
+	free(p->ctrl_loss_tmo);
+	p->ctrl_loss_tmo = ctrl_loss_tmo ? strdup(ctrl_loss_tmo) : NULL;
+}
+
+__public const char *nvme_ctrl_get_ctrl_loss_tmo(const struct nvme_ctrl *p)
+{
+	return p->ctrl_loss_tmo;
+}
+
+__public void nvme_ctrl_set_reconnect_delay(
+		struct nvme_ctrl *p,
+		const char *reconnect_delay)
+{
+	free(p->reconnect_delay);
+	p->reconnect_delay = reconnect_delay ? strdup(reconnect_delay) : NULL;
+}
+
+__public const char *nvme_ctrl_get_reconnect_delay(const struct nvme_ctrl *p)
+{
+	return p->reconnect_delay;
+}
+
+__public void nvme_ctrl_set_fast_io_fail_tmo(
+		struct nvme_ctrl *p,
+		const char *fast_io_fail_tmo)
+{
+	free(p->fast_io_fail_tmo);
+	p->fast_io_fail_tmo =
+		fast_io_fail_tmo ? strdup(fast_io_fail_tmo) : NULL;
+}
+
+__public const char *nvme_ctrl_get_fast_io_fail_tmo(const struct nvme_ctrl *p)
+{
+	return p->fast_io_fail_tmo;
+}
+
+__public void nvme_ctrl_set_kato(struct nvme_ctrl *p, const char *kato)
+{
+	free(p->kato);
+	p->kato = kato ? strdup(kato) : NULL;
+}
+
+__public const char *nvme_ctrl_get_kato(const struct nvme_ctrl *p)
+{
+	return p->kato;
 }
 
 __public void nvme_ctrl_set_discovery_ctrl(

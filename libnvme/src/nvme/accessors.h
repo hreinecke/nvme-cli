@@ -404,6 +404,14 @@ void nvme_ctrl_set_tls_key_identity(
 const char *nvme_ctrl_get_tls_key_identity(const struct nvme_ctrl *p);
 
 /**
+ * nvme_ctrl_get_tls_configured_key() - Get tls_configured_key.
+ * @p: The &struct nvme_ctrl instance to query.
+ *
+ * Return: The value of the tls_configured_key field, or NULL if not set.
+ */
+const char *nvme_ctrl_get_tls_configured_key(const struct nvme_ctrl *p);
+
+/**
  * nvme_ctrl_set_tls_key() - Set tls_key.
  * @p: The &struct nvme_ctrl instance to update.
  * @tls_key: New string; a copy is stored. Pass NULL to clear.
@@ -465,6 +473,72 @@ const char *nvme_ctrl_get_host_traddr(const struct nvme_ctrl *p);
  * Return: The value of the host_iface field, or NULL if not set.
  */
 const char *nvme_ctrl_get_host_iface(const struct nvme_ctrl *p);
+
+/**
+ * nvme_ctrl_set_ctrl_loss_tmo() - Set ctrl_loss_tmo.
+ * @p: The &struct nvme_ctrl instance to update.
+ * @ctrl_loss_tmo: New string; a copy is stored. Pass NULL to clear.
+ */
+void nvme_ctrl_set_ctrl_loss_tmo(
+		struct nvme_ctrl *p,
+		const char *ctrl_loss_tmo);
+
+/**
+ * nvme_ctrl_get_ctrl_loss_tmo() - Get ctrl_loss_tmo.
+ * @p: The &struct nvme_ctrl instance to query.
+ *
+ * Return: The value of the ctrl_loss_tmo field, or NULL if not set.
+ */
+const char *nvme_ctrl_get_ctrl_loss_tmo(const struct nvme_ctrl *p);
+
+/**
+ * nvme_ctrl_set_reconnect_delay() - Set reconnect_delay.
+ * @p: The &struct nvme_ctrl instance to update.
+ * @reconnect_delay: New string; a copy is stored. Pass NULL to clear.
+ */
+void nvme_ctrl_set_reconnect_delay(
+		struct nvme_ctrl *p,
+		const char *reconnect_delay);
+
+/**
+ * nvme_ctrl_get_reconnect_delay() - Get reconnect_delay.
+ * @p: The &struct nvme_ctrl instance to query.
+ *
+ * Return: The value of the reconnect_delay field, or NULL if not set.
+ */
+const char *nvme_ctrl_get_reconnect_delay(const struct nvme_ctrl *p);
+
+/**
+ * nvme_ctrl_set_fast_io_fail_tmo() - Set fast_io_fail_tmo.
+ * @p: The &struct nvme_ctrl instance to update.
+ * @fast_io_fail_tmo: New string; a copy is stored. Pass NULL to clear.
+ */
+void nvme_ctrl_set_fast_io_fail_tmo(
+		struct nvme_ctrl *p,
+		const char *fast_io_fail_tmo);
+
+/**
+ * nvme_ctrl_get_fast_io_fail_tmo() - Get fast_io_fail_tmo.
+ * @p: The &struct nvme_ctrl instance to query.
+ *
+ * Return: The value of the fast_io_fail_tmo field, or NULL if not set.
+ */
+const char *nvme_ctrl_get_fast_io_fail_tmo(const struct nvme_ctrl *p);
+
+/**
+ * nvme_ctrl_set_kato() - Set kato.
+ * @p: The &struct nvme_ctrl instance to update.
+ * @kato: New string; a copy is stored. Pass NULL to clear.
+ */
+void nvme_ctrl_set_kato(struct nvme_ctrl *p, const char *kato);
+
+/**
+ * nvme_ctrl_get_kato() - Get kato.
+ * @p: The &struct nvme_ctrl instance to query.
+ *
+ * Return: The value of the kato field, or NULL if not set.
+ */
+const char *nvme_ctrl_get_kato(const struct nvme_ctrl *p);
 
 /**
  * nvme_ctrl_set_discovery_ctrl() - Set discovery_ctrl.
