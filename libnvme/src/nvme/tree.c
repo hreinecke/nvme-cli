@@ -974,16 +974,14 @@ void nvme_deconfigure_ctrl(nvme_ctrl_t c)
 	FREE_CTRL_ATTR(c->queue_count);
 	FREE_CTRL_ATTR(c->serial);
 	FREE_CTRL_ATTR(c->sqsize);
-	FREE_CTRL_ATTR(c->dhchap_host_key);
-	FREE_CTRL_ATTR(c->dhchap_ctrl_key);
-	FREE_CTRL_ATTR(c->keyring);
-	FREE_CTRL_ATTR(c->tls_key_identity);
-	FREE_CTRL_ATTR(c->tls_key);
-	FREE_CTRL_ATTR(c->address);
 	FREE_CTRL_ATTR(c->dctype);
 	FREE_CTRL_ATTR(c->cntrltype);
 	FREE_CTRL_ATTR(c->cntlid);
 	FREE_CTRL_ATTR(c->phy_slot);
+	FREE_CTRL_ATTR(c->ctrl_loss_tmo);
+	FREE_CTRL_ATTR(c->reconnect_delay);
+	FREE_CTRL_ATTR(c->fast_io_fail_tmo);
+	FREE_CTRL_ATTR(c->kato);
 }
 
 __public int nvme_disconnect_ctrl(nvme_ctrl_t c)
@@ -1000,6 +998,13 @@ __public int nvme_disconnect_ctrl(nvme_ctrl_t c)
 	}
 	nvme_msg(ctx, LOG_INFO, "%s: %s disconnected\n", c->name, c->subsysnqn);
 	nvme_deconfigure_ctrl(c);
+	FREE_CTRL_ATTR(c->dhchap_host_key);
+	FREE_CTRL_ATTR(c->dhchap_ctrl_key);
+	FREE_CTRL_ATTR(c->keyring);
+	FREE_CTRL_ATTR(c->tls_key_identity);
+	FREE_CTRL_ATTR(c->tls_configured_key);
+	FREE_CTRL_ATTR(c->tls_key);
+	FREE_CTRL_ATTR(c->address);
 	return 0;
 }
 
@@ -1023,6 +1028,14 @@ static void __nvme_free_ctrl(nvme_ctrl_t c)
 		__nvme_free_ns(n);
 
 	nvme_deconfigure_ctrl(c);
+
+	FREE_CTRL_ATTR(c->dhchap_host_key);
+	FREE_CTRL_ATTR(c->dhchap_ctrl_key);
+	FREE_CTRL_ATTR(c->keyring);
+	FREE_CTRL_ATTR(c->tls_key_identity);
+	FREE_CTRL_ATTR(c->tls_configured_key);
+	FREE_CTRL_ATTR(c->tls_key);
+	FREE_CTRL_ATTR(c->address);
 
 	FREE_CTRL_ATTR(c->transport);
 	FREE_CTRL_ATTR(c->subsysnqn);
@@ -1696,42 +1709,21 @@ static void nvme_read_sysfs_dhchap(struct nvme_global_ctx *ctx, nvme_ctrl_t c)
 
 static void nvme_read_sysfs_tls(struct nvme_global_ctx *ctx, nvme_ctrl_t c)
 {
-	char *endptr;
-	long key_id;
-	char *key, *keyring;
-
-	key = nvme_get_ctrl_attr(c, "tls_key");
-	if (!key) {
+	nvme_ctrl_set_tls_key(c, nvme_get_ctrl_attr(c, "tls_key"));
+	if (!nvme_ctrl_get_tls_key(c)) {
 		/* tls_key is only present if --tls has been used. */
 		return;
 	}
-	c->cfg.tls = true;
 
-	keyring = nvme_get_ctrl_attr(c, "tls_keyring");
-	nvme_ctrl_set_keyring(c, keyring);
-	free(keyring);
+	nvme_ctrl_set_keyring(c, nvme_get_ctrl_attr(c, "tls_keyring"));
 
-	/* the sysfs entry is not prefixing the id but it's in hex */
-	key_id = strtol(key, &endptr, 16);
-	if (endptr != key)
-		c->cfg.tls_key = key_id;
-
-	free(key);
-
-	key = nvme_get_ctrl_attr(c, "tls_configured_key");
-	if (!key)
-		return;
-
-	/* the sysfs entry is not prefixing the id but it's in hex */
-	key_id = strtol(key, &endptr, 16);
-	if (endptr != key)
-		c->cfg.tls_configured_key = key_id;
-
-	free(key);
+	if (nvme_ctrl_get_tls_configured_key(c))
+		free(c->tls_configured_key);
+	c->tls_configured_key = nvme_get_ctrl_attr(c, "tls_configured_key");
 }
 
-static int nvme_reconfigure_ctrl(struct nvme_global_ctx *ctx, nvme_ctrl_t c, const char *path,
-				 const char *name)
+static int nvme_reconfigure_ctrl(struct nvme_global_ctx *ctx, nvme_ctrl_t c,
+				 const char *path, const char *name)
 {
 	DIR *d;
 
@@ -1739,20 +1731,7 @@ static int nvme_reconfigure_ctrl(struct nvme_global_ctx *ctx, nvme_ctrl_t c, con
 	 * It's necesssary to release any resources first because a ctrl
 	 * can be reused.
 	 */
-	nvme_ctrl_release_transport_handle(c);
-	FREE_CTRL_ATTR(c->name);
-	FREE_CTRL_ATTR(c->sysfs_dir);
-	FREE_CTRL_ATTR(c->firmware);
-	FREE_CTRL_ATTR(c->model);
-	FREE_CTRL_ATTR(c->state);
-	FREE_CTRL_ATTR(c->numa_node);
-	FREE_CTRL_ATTR(c->queue_count);
-	FREE_CTRL_ATTR(c->serial);
-	FREE_CTRL_ATTR(c->sqsize);
-	FREE_CTRL_ATTR(c->cntrltype);
-	FREE_CTRL_ATTR(c->cntlid);
-	FREE_CTRL_ATTR(c->dctype);
-	FREE_CTRL_ATTR(c->phy_slot);
+	nvme_deconfigure_ctrl(c);
 
 	d = opendir(path);
 	if (!d) {
@@ -1775,6 +1754,10 @@ static int nvme_reconfigure_ctrl(struct nvme_global_ctx *ctx, nvme_ctrl_t c, con
 	c->cntrltype = nvme_get_ctrl_attr(c, "cntrltype");
 	c->cntlid = nvme_get_ctrl_attr(c, "cntlid");
 	c->dctype = nvme_get_ctrl_attr(c, "dctype");
+	c->ctrl_loss_tmo = nvme_get_ctrl_attr(c, "ctrl_loss_tmo");
+	c->reconnect_delay = nvme_get_ctrl_attr(c, "reconnect_delay");
+	c->fast_io_fail_tmo = nvme_get_ctrl_attr(c, "fast_io_fail_tmo");
+	c->kato = nvme_get_ctrl_attr(c, "kato");
 	nvme_ctrl_lookup_phy_slot(ctx, c);
 	nvme_read_sysfs_dhchap(ctx, c);
 	nvme_read_sysfs_tls(ctx, c);
