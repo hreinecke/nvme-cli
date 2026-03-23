@@ -967,7 +967,17 @@ __public bool nvme_ctrl_is_unique_discovery_ctrl(nvme_ctrl_t c)
 
 __public bool nvme_ctrl_is_persistent(nvme_ctrl_t c)
 {
-	return (nvme_ctrl_get_discovery_ctrl(c) && c->cfg.keep_alive_tmo != 0);
+	unsigned long kato = 0;
+	char *endptr = NULL;
+
+	if (!nvme_ctrl_get_discovery_ctrl(c) || !c->kato)
+		return false;
+
+	errno = 0;
+	kato = strtoul(c->kato, &endptr, 0);
+	if (errno || c->kato == endptr)
+		return false;
+	return kato != 0;
 }
 
 __public struct nvme_fabrics_config *nvme_ctrl_get_config(nvme_ctrl_t c)
