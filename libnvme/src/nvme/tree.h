@@ -735,6 +735,33 @@ char *nvme_ctrl_get_src_addr(nvme_ctrl_t c, char *src_addr, size_t src_addr_len)
 bool nvme_ctrl_is_unique_discovery_ctrl(nvme_ctrl_t c);
 
 /**
+ * nvme_ctrl_get_discovery_ctrl - Check for discovery controller
+ * @c: Controller instance
+ *
+ * Return: %true if @c is a discovery controller, %false otherwise.
+ */
+bool nvme_ctrl_get_discovery_ctrl(nvme_ctrl_t c);
+
+/**
+ * nvme_ctrl_set_discovery_ctrl - Set discovery controller status
+ * @c: Controller instance
+ * @discovery_ctrl: discovery setting
+ *
+ * If @discovery_ctrl is %true mark @c as a discovery controller,
+ * otherwise unmark the discovery controller setting on @c.
+ */
+void nvme_ctrl_set_discovery_ctrl(nvme_ctrl_t c, bool discovery_ctrl);
+
+/**
+ * nvme_ctrl_set_cntrltype - Set controller type
+ * @c: Controller instance
+ * @type: controller type
+ *
+ * Set @c to controller type @type.
+ */
+void nvme_ctrl_set_cntrltype(nvme_ctrl_t c, __u8 type);
+
+/**
  * nvme_ctrl_is_persistent - Check for persistent discovery controller
  * @c: Controller instance
  *

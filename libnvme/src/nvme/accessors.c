@@ -386,18 +386,6 @@ __public const char *nvme_ctrl_get_kato(const struct nvme_ctrl *p)
 	return p->kato;
 }
 
-__public void nvme_ctrl_set_discovery_ctrl(
-		struct nvme_ctrl *p,
-		bool discovery_ctrl)
-{
-	p->discovery_ctrl = discovery_ctrl;
-}
-
-__public bool nvme_ctrl_get_discovery_ctrl(const struct nvme_ctrl *p)
-{
-	return p->discovery_ctrl;
-}
-
 __public void nvme_ctrl_set_discovered(struct nvme_ctrl *p, bool discovered)
 {
 	p->discovered = discovered;

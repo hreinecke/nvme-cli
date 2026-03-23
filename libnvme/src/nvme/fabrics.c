@@ -698,10 +698,8 @@ static int build_options(nvme_host_t h, nvme_ctrl_t c, char **argstr)
 		return -ENOMEM;
 	}
 
-	if (!strcmp(nvme_ctrl_get_subsysnqn(c), NVME_DISC_SUBSYS_NAME)) {
-		nvme_ctrl_set_discovery_ctrl(c, true);
+	if (!strcmp(nvme_ctrl_get_subsysnqn(c), NVME_DISC_SUBSYS_NAME))
 		discovery_nqn = true;
-	}
 
 	if (nvme_ctrl_get_discovery_ctrl(c))
 		discover = true;
@@ -1587,13 +1585,6 @@ static __u8 nvme_get_adrfam(nvme_ctrl_t c)
 	return adrfam;
 }
 
-/* These string definitions must match with the kernel */
-static const char *cntrltype_str[] = {
-	[NVME_CTRL_CNTRLTYPE_IO] = "io",
-	[NVME_CTRL_CNTRLTYPE_DISCOVERY] = "discovery",
-	[NVME_CTRL_CNTRLTYPE_ADMIN] = "admin",
-};
-
 static const char *dctype_str[] = {
 	[NVME_CTRL_DCTYPE_NOT_REPORTED] = "none",
 	[NVME_CTRL_DCTYPE_DDC] = "ddc",
@@ -1621,12 +1612,7 @@ static int nvme_fetch_cntrltype_dctype_from_id(nvme_ctrl_t c)
 	if (ret)
 		return ret;
 
-	if (!c->cntrltype) {
-		if (id->cntrltype > NVME_CTRL_CNTRLTYPE_ADMIN || !cntrltype_str[id->cntrltype])
-			c->cntrltype = strdup("reserved");
-		else
-			c->cntrltype = strdup(cntrltype_str[id->cntrltype]);
-	}
+	nvme_ctrl_set_cntrltype(c, id->cntrltype);
 
 	if (!c->dctype) {
 		if (id->dctype > NVME_CTRL_DCTYPE_CDC || !dctype_str[id->dctype])

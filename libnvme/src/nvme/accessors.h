@@ -541,21 +541,6 @@ void nvme_ctrl_set_kato(struct nvme_ctrl *p, const char *kato);
 const char *nvme_ctrl_get_kato(const struct nvme_ctrl *p);
 
 /**
- * nvme_ctrl_set_discovery_ctrl() - Set discovery_ctrl.
- * @p: The &struct nvme_ctrl instance to update.
- * @discovery_ctrl: Value to assign to the discovery_ctrl field.
- */
-void nvme_ctrl_set_discovery_ctrl(struct nvme_ctrl *p, bool discovery_ctrl);
-
-/**
- * nvme_ctrl_get_discovery_ctrl() - Get discovery_ctrl.
- * @p: The &struct nvme_ctrl instance to query.
- *
- * Return: The value of the discovery_ctrl field.
- */
-bool nvme_ctrl_get_discovery_ctrl(const struct nvme_ctrl *p);
-
-/**
  * nvme_ctrl_set_discovered() - Set discovered.
  * @p: The &struct nvme_ctrl instance to update.
  * @discovered: Value to assign to the discovered field.

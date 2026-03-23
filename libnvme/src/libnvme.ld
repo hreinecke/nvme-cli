@@ -16,6 +16,9 @@ LIBNVME_3 {
 		nvme_ctrl_get_subsysnqn;
 		nvme_ctrl_get_subsystem;
 		nvme_ctrl_get_transport_handle;
+		nvme_ctrl_get_discovery_ctrl;
+		nvme_ctrl_set_discovery_ctrl;
+		nvme_ctrl_set_cntrltype;
 		nvme_ctrl_is_unique_discovery_ctrl;
 		nvme_ctrl_is_persistent;
 		nvme_ctrl_identify;

@@ -24,6 +24,7 @@
 
 #include <ccan/endian/endian.h>
 #include <ccan/list/list.h>
+#include <ccan/array_size/array_size.h>
 
 #include <libnvme.h>
 
@@ -925,15 +926,48 @@ __public const char *nvme_ctrl_get_state(nvme_ctrl_t c)
 	return c->state;
 }
 
+/* These string definitions must match with the kernel */
+static const char *cntrltype_str[] = {
+	[NVME_CTRL_CNTRLTYPE_IO] = "io",
+	[NVME_CTRL_CNTRLTYPE_DISCOVERY] = "discovery",
+	[NVME_CTRL_CNTRLTYPE_ADMIN] = "admin",
+};
+
+__public void nvme_ctrl_set_cntrltype(nvme_ctrl_t c, __u8 type)
+{
+	const char *cntrltype = "reserved";
+
+	if (type < ARRAY_SIZE(cntrltype_str))
+		cntrltype = cntrltype_str[type];
+
+	if (c->cntrltype)
+		free(c->cntrltype);
+	c->cntrltype = strdup(cntrltype);
+}
+
+__public void nvme_ctrl_set_discovery_ctrl(nvme_ctrl_t c, bool discovery_ctrl)
+{
+	__u8 type = discovery_ctrl ?
+		NVME_CTRL_CNTRLTYPE_DISCOVERY: NVME_CTRL_CNTRLTYPE_IO;
+
+	nvme_ctrl_set_cntrltype(c, type);
+}
+
+__public bool nvme_ctrl_get_discovery_ctrl(nvme_ctrl_t c)
+{
+	return (!strcmp(c->cntrltype,
+			cntrltype_str[NVME_CTRL_CNTRLTYPE_DISCOVERY]));
+}
+
 __public bool nvme_ctrl_is_unique_discovery_ctrl(nvme_ctrl_t c)
 {
-	return (c->discovery_ctrl &&
+	return (nvme_ctrl_get_discovery_ctrl(c) &&
 		strcmp(c->subsysnqn, NVME_DISC_SUBSYS_NAME));
 }
 
 __public bool nvme_ctrl_is_persistent(nvme_ctrl_t c)
 {
-	return (c->discovery_ctrl && c->cfg.keep_alive_tmo != 0);
+	return (nvme_ctrl_get_discovery_ctrl(c) && c->cfg.keep_alive_tmo != 0);
 }
 
 __public struct nvme_fabrics_config *nvme_ctrl_get_config(nvme_ctrl_t c)
@@ -1762,6 +1796,8 @@ static int nvme_reconfigure_ctrl(struct nvme_global_ctx *ctx, nvme_ctrl_t c,
 	c->serial = nvme_get_ctrl_attr(c, "serial");
 	c->sqsize = nvme_get_ctrl_attr(c, "sqsize");
 	c->cntrltype = nvme_get_ctrl_attr(c, "cntrltype");
+	if (!c->cntrltype)
+		c->cntrltype = strdup("io");
 	c->cntlid = nvme_get_ctrl_attr(c, "cntlid");
 	c->dctype = nvme_get_ctrl_attr(c, "dctype");
 	c->ctrl_loss_tmo = nvme_get_ctrl_attr(c, "ctrl_loss_tmo");
@@ -1809,14 +1845,15 @@ __public int nvme_init_ctrl(nvme_host_t h, nvme_ctrl_t c, int instance)
 	if (!s)
 		return -ENVME_CONNECT_LOOKUP_SUBSYS;
 
-	if (s->subsystype && !strcmp(s->subsystype, "discovery"))
-		c->discovery_ctrl = true;
+	if (s->subsystype && !strcmp(s->subsystype, "discovery")
+	    && !nvme_ctrl_get_discovery_ctrl(c))
+		nvme_ctrl_set_discovery_ctrl(c, true);
 
 	c->s = s;
 	list_add_tail(&s->ctrls, &c->entry);
 
 	return ret;
-}
+}\
 
 int nvme_ctrl_alloc(struct nvme_global_ctx *ctx, nvme_subsystem_t s,
 		    const char *path, const char *name,
@@ -1912,11 +1949,13 @@ skip_address:
 	}
 	FREE_CTRL_ATTR(c->address);
 	c->address = xstrdup(addr);
-	if (s->subsystype && !strcmp(s->subsystype, "discovery"))
-		c->discovery_ctrl = true;
 	ret = nvme_reconfigure_ctrl(ctx, c, path, name);
 	if (ret)
 		return ret;
+
+	if (s->subsystype && !strcmp(s->subsystype, "discovery")
+	    && !nvme_ctrl_get_discovery_ctrl(c))
+		nvme_ctrl_set_discovery_ctrl(c, true);
 
 	*cp = c;
 	return 0;
@@ -2345,7 +2384,6 @@ struct sysfs_attr_table {
 };
 
 #define GETSHIFT(x) (__builtin_ffsll(x) - 1)
-#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 static int parse_attrs(const char *path, struct sysfs_attr_table *tbl, int size)
 {
