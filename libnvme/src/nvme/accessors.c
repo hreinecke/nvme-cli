@@ -386,16 +386,6 @@ __public const char *nvme_ctrl_get_kato(const struct nvme_ctrl *p)
 	return p->kato;
 }
 
-__public void nvme_ctrl_set_discovered(struct nvme_ctrl *p, bool discovered)
-{
-	p->discovered = discovered;
-}
-
-__public bool nvme_ctrl_get_discovered(const struct nvme_ctrl *p)
-{
-	return p->discovered;
-}
-
 /****************************************************************************
  * Accessors for: struct nvme_subsystem
  ****************************************************************************/

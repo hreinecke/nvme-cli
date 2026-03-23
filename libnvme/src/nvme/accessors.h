@@ -540,21 +540,6 @@ void nvme_ctrl_set_kato(struct nvme_ctrl *p, const char *kato);
  */
 const char *nvme_ctrl_get_kato(const struct nvme_ctrl *p);
 
-/**
- * nvme_ctrl_set_discovered() - Set discovered.
- * @p: The &struct nvme_ctrl instance to update.
- * @discovered: Value to assign to the discovered field.
- */
-void nvme_ctrl_set_discovered(struct nvme_ctrl *p, bool discovered);
-
-/**
- * nvme_ctrl_get_discovered() - Get discovered.
- * @p: The &struct nvme_ctrl instance to query.
- *
- * Return: The value of the discovered field.
- */
-bool nvme_ctrl_get_discovered(const struct nvme_ctrl *p);
-
 /****************************************************************************
  * Accessors for: struct nvme_subsystem
  ****************************************************************************/

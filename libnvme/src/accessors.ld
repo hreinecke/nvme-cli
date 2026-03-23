@@ -64,8 +64,6 @@ LIBNVME_ACCESSORS_3 {
 		nvme_ctrl_get_dctype;
 		nvme_ctrl_get_host_traddr;
 		nvme_ctrl_get_host_iface;
-		nvme_ctrl_get_discovered;
-		nvme_ctrl_set_discovered;
 		nvme_ctrl_get_phy_slot;
 		nvme_ctrl_get_ctrl_loss_tmo;
 		nvme_ctrl_set_ctrl_loss_tmo;

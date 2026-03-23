@@ -1053,7 +1053,7 @@ __public int nvmf_add_ctrl(nvme_host_t h, nvme_ctrl_t c,
 		}
 	}
 
-	nvme_ctrl_set_discovered(c, true);
+	c->discovered = true;
 	if (traddr_is_hostname(h->ctx, c)) {
 		char *traddr = c->traddr;
 
@@ -1156,7 +1156,7 @@ static int nvmf_connect_disc_entry(nvme_host_t h,
 
 	switch (e->subtype) {
 	case NVME_NQN_CURR:
-		nvme_ctrl_set_discovered(c, true);
+		c->discovered = true;
 		break;
 	case NVME_NQN_DISC:
 		if (discover)
@@ -1172,7 +1172,7 @@ static int nvmf_connect_disc_entry(nvme_host_t h,
 		break;
 	}
 
-	if (nvme_ctrl_get_discovered(c)) {
+	if (c->discovered) {
 		nvme_free_ctrl(c);
 		return -EAGAIN;
 	}

@@ -214,7 +214,7 @@ struct nvme_ctrl { /*!generate-accessors*/
 	char *reconnect_delay;
 	char *fast_io_fail_tmo;
 	char *kato;
-	bool discovered;
+	bool discovered; //!accessors:none
 	struct nvme_fabrics_config cfg;
 };
 
