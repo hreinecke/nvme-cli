@@ -398,18 +398,6 @@ __public bool nvme_ctrl_get_discovery_ctrl(const struct nvme_ctrl *p)
 	return p->discovery_ctrl;
 }
 
-__public void nvme_ctrl_set_unique_discovery_ctrl(
-		struct nvme_ctrl *p,
-		bool unique_discovery_ctrl)
-{
-	p->unique_discovery_ctrl = unique_discovery_ctrl;
-}
-
-__public bool nvme_ctrl_get_unique_discovery_ctrl(const struct nvme_ctrl *p)
-{
-	return p->unique_discovery_ctrl;
-}
-
 __public void nvme_ctrl_set_discovered(struct nvme_ctrl *p, bool discovered)
 {
 	p->discovered = discovered;

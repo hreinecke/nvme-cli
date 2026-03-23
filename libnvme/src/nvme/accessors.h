@@ -556,23 +556,6 @@ void nvme_ctrl_set_discovery_ctrl(struct nvme_ctrl *p, bool discovery_ctrl);
 bool nvme_ctrl_get_discovery_ctrl(const struct nvme_ctrl *p);
 
 /**
- * nvme_ctrl_set_unique_discovery_ctrl() - Set unique_discovery_ctrl.
- * @p: The &struct nvme_ctrl instance to update.
- * @unique_discovery_ctrl: Value to assign to the unique_discovery_ctrl field.
- */
-void nvme_ctrl_set_unique_discovery_ctrl(
-		struct nvme_ctrl *p,
-		bool unique_discovery_ctrl);
-
-/**
- * nvme_ctrl_get_unique_discovery_ctrl() - Get unique_discovery_ctrl.
- * @p: The &struct nvme_ctrl instance to query.
- *
- * Return: The value of the unique_discovery_ctrl field.
- */
-bool nvme_ctrl_get_unique_discovery_ctrl(const struct nvme_ctrl *p);
-
-/**
  * nvme_ctrl_set_discovered() - Set discovered.
  * @p: The &struct nvme_ctrl instance to update.
  * @discovered: Value to assign to the discovered field.
