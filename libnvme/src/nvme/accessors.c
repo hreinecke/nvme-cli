@@ -408,16 +408,6 @@ __public bool nvme_ctrl_get_discovered(const struct nvme_ctrl *p)
 	return p->discovered;
 }
 
-__public void nvme_ctrl_set_persistent(struct nvme_ctrl *p, bool persistent)
-{
-	p->persistent = persistent;
-}
-
-__public bool nvme_ctrl_get_persistent(const struct nvme_ctrl *p)
-{
-	return p->persistent;
-}
-
 /****************************************************************************
  * Accessors for: struct nvme_subsystem
  ****************************************************************************/

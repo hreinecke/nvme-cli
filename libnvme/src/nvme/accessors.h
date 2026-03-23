@@ -570,21 +570,6 @@ void nvme_ctrl_set_discovered(struct nvme_ctrl *p, bool discovered);
  */
 bool nvme_ctrl_get_discovered(const struct nvme_ctrl *p);
 
-/**
- * nvme_ctrl_set_persistent() - Set persistent.
- * @p: The &struct nvme_ctrl instance to update.
- * @persistent: Value to assign to the persistent field.
- */
-void nvme_ctrl_set_persistent(struct nvme_ctrl *p, bool persistent);
-
-/**
- * nvme_ctrl_get_persistent() - Get persistent.
- * @p: The &struct nvme_ctrl instance to query.
- *
- * Return: The value of the persistent field.
- */
-bool nvme_ctrl_get_persistent(const struct nvme_ctrl *p);
-
 /****************************************************************************
  * Accessors for: struct nvme_subsystem
  ****************************************************************************/

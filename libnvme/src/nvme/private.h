@@ -216,7 +216,6 @@ struct nvme_ctrl { /*!generate-accessors*/
 	char *kato;
 	bool discovery_ctrl;
 	bool discovered;
-	bool persistent;
 	struct nvme_fabrics_config cfg;
 };
 

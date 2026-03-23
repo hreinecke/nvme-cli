@@ -931,6 +931,11 @@ __public bool nvme_ctrl_is_unique_discovery_ctrl(nvme_ctrl_t c)
 		strcmp(c->subsysnqn, NVME_DISC_SUBSYS_NAME));
 }
 
+__public bool nvme_ctrl_is_persistent(nvme_ctrl_t c)
+{
+	return (c->discovery_ctrl && c->cfg.keep_alive_tmo != 0);
+}
+
 __public struct nvme_fabrics_config *nvme_ctrl_get_config(nvme_ctrl_t c)
 {
 	return &c->cfg;
