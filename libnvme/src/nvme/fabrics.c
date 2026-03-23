@@ -336,11 +336,9 @@ static const struct nvme_fabric_options default_supported_options = {
 
 #define MERGE_CFG_OPTION(c, n, o, d)			\
 	if ((c)->o == d) (c)->o = (n)->o
-static struct nvme_fabrics_config *merge_config(nvme_ctrl_t c,
+static void merge_config(struct nvme_fabrics_config *ctrl_cfg,
 		const struct nvme_fabrics_config *cfg)
 {
-	struct nvme_fabrics_config *ctrl_cfg = nvme_ctrl_get_config(c);
-
 	MERGE_CFG_OPTION(ctrl_cfg, cfg, nr_io_queues, 0);
 	MERGE_CFG_OPTION(ctrl_cfg, cfg, nr_write_queues, 0);
 	MERGE_CFG_OPTION(ctrl_cfg, cfg, nr_poll_queues, 0);
@@ -359,8 +357,6 @@ static struct nvme_fabrics_config *merge_config(nvme_ctrl_t c,
 	MERGE_CFG_OPTION(ctrl_cfg, cfg, data_digest, false);
 	MERGE_CFG_OPTION(ctrl_cfg, cfg, tls, false);
 	MERGE_CFG_OPTION(ctrl_cfg, cfg, concat, false);
-
-	return ctrl_cfg;
 }
 
 #define UPDATE_CFG_OPTION(c, n, o, d)			\
@@ -669,9 +665,9 @@ static bool traddr_is_hostname(struct nvme_global_ctx *ctx, nvme_ctrl_t c)
 	return true;
 }
 
-static int build_options(nvme_host_t h, nvme_ctrl_t c, char **argstr)
+static int build_options(nvme_host_t h, nvme_ctrl_t c,
+			 struct nvme_fabrics_config *cfg, char **argstr)
 {
-	struct nvme_fabrics_config *cfg = nvme_ctrl_get_config(c);
 	const char *transport = nvme_ctrl_get_transport(c);
 	const char *hostnqn, *hostid, *hostkey, *ctrlkey = NULL;
 	bool discover = false, discovery_nqn = false;
@@ -985,12 +981,14 @@ __public int nvmf_add_ctrl(nvme_host_t h, nvme_ctrl_t c,
 		  const struct nvme_fabrics_config *cfg)
 {
 	nvme_subsystem_t s;
+	struct nvme_fabrics_config *ctrl_cfg =
+		nvme_ctrl_get_config(c);
 	const char *root_app, *app;
 	_cleanup_free_ char *argstr = NULL;
 	int ret;
 
 	/* highest prio have configs from command line */
-	cfg = merge_config(c, cfg);
+	merge_config(ctrl_cfg, cfg);
 
 	/* apply configuration from config file (JSON) */
 	s = nvme_lookup_subsystem(h, NULL, nvme_ctrl_get_subsysnqn(c));
@@ -1009,7 +1007,7 @@ __public int nvmf_add_ctrl(nvme_host_t h, nvme_ctrl_t c,
 		if (fc) {
 			const char *key;
 
-			cfg = merge_config(c, nvme_ctrl_get_config(fc));
+			merge_config(ctrl_cfg, nvme_ctrl_get_config(fc));
 			/*
 			 * An authentication key might already been set
 			 * in @cfg, so ensure to update @c with the correct
@@ -1064,7 +1062,7 @@ __public int nvmf_add_ctrl(nvme_host_t h, nvme_ctrl_t c,
 		free(traddr);
 	}
 
-	ret = build_options(h, c, &argstr);
+	ret = build_options(h, c, ctrl_cfg, &argstr);
 	if (ret)
 		return ret;
 
@@ -1079,10 +1077,11 @@ __public int nvmf_add_ctrl(nvme_host_t h, nvme_ctrl_t c,
 
 __public int nvmf_connect_ctrl(nvme_ctrl_t c)
 {
+	struct nvme_fabrics_config *cfg = nvme_ctrl_get_config(c);
 	_cleanup_free_ char *argstr = NULL;
 	int ret;
 
-	ret = build_options(c->s->h, c, &argstr);
+	ret = build_options(c->s->h, c, cfg, &argstr);
 	if (ret)
 		return ret;
 
