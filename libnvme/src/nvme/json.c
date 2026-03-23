@@ -22,11 +22,9 @@
 #define JSON_UPDATE_BOOL_OPTION(c, k, a, o)				\
 	if (!strcmp(# a, k ) && !c->a) c->a = json_object_get_boolean(o);
 
-static void json_update_attributes(nvme_ctrl_t c,
+static void json_update_attributes(struct nvme_fabrics_config *cfg,
 				   struct json_object *ctrl_obj)
 {
-	struct nvme_fabrics_config *cfg = nvme_ctrl_get_config(c);
-
 	json_object_object_foreach(ctrl_obj, key_str, val_obj) {
 		JSON_UPDATE_INT_OPTION(cfg, key_str,
 				       nr_io_queues, val_obj);
@@ -59,20 +57,6 @@ static void json_update_attributes(nvme_ctrl_t c,
 					tls, val_obj);
 		JSON_UPDATE_BOOL_OPTION(cfg, key_str,
 					concat, val_obj);
-		if (!strcmp("discovery", key_str) &&
-		    !nvme_ctrl_get_discovery_ctrl(c))
-			nvme_ctrl_set_discovery_ctrl(c, true);
-		if (!strcmp("keyring", key_str))
-			nvme_ctrl_set_keyring(c,
-				json_object_get_string(val_obj));
-		if (!strcmp("tls_key_identity", key_str)) {
-			nvme_ctrl_set_tls_key_identity(c,
-				json_object_get_string(val_obj));
-		}
-		if (!strcmp("tls_key", key_str)) {
-			nvme_ctrl_set_tls_key(c,
-				json_object_get_string(val_obj));
-		}
 	}
 }
 
@@ -101,7 +85,10 @@ static void json_parse_port(nvme_subsystem_t s, struct json_object *port_obj)
 	c = nvme_lookup_ctrl(s, &fctx, NULL);
 	if (!c)
 		return;
-	json_update_attributes(c, port_obj);
+	json_update_attributes(&c->cfg, port_obj);
+	attr_obj = json_object_object_get(port_obj, "discovery");
+	if (attr_obj && !nvme_ctrl_get_discovery_ctrl(c))
+		nvme_ctrl_set_discovery_ctrl(c, true);
 	attr_obj = json_object_object_get(port_obj, "dhchap_key");
 	if (attr_obj)
 		nvme_ctrl_set_dhchap_host_key(c, json_object_get_string(attr_obj));
@@ -269,11 +256,12 @@ int json_read_config(struct nvme_global_ctx *ctx, const char *config_file)
 		json_object_object_add((p), # o ,			\
 				       json_object_new_boolean((c)->o))
 
-static void json_update_port(struct json_object *ctrl_array, nvme_ctrl_t c)
+static void json_update_port(struct nvme_global_ctx *ctx,
+			     struct json_object *port_obj, nvme_ctrl_t c)
 {
-	struct nvme_fabrics_config *cfg = nvme_ctrl_get_config(c);
-	struct json_object *port_obj = json_object_new_object();
 	const char *transport, *value;
+	char *endptr;
+	unsigned long v;
 
 	transport = nvme_ctrl_get_transport(c);
 	if (!strcmp(transport, "pcie")) {
@@ -307,7 +295,6 @@ static void json_update_port(struct json_object *ctrl_array, nvme_ctrl_t c)
 	if (value)
 		json_object_object_add(port_obj, "dhchap_ctrl_key",
 				       json_object_new_string(value));
-	JSON_BOOL_OPTION(cfg, port_obj, tls);
 	value = nvme_ctrl_get_keyring(c);
 	if (value)
 		json_object_object_add(port_obj, "keyring",
@@ -317,37 +304,78 @@ static void json_update_port(struct json_object *ctrl_array, nvme_ctrl_t c)
 		json_object_object_add(port_obj, "tls_key_identity",
 				       json_object_new_string(value));
 	value = nvme_ctrl_get_tls_key(c);
-	if (value)
+	if (value) {
+		v = strtoul(value, &endptr, 0);
+		if (value != endptr && v != 0) {
+			const char *key_desc =
+				nvme_describe_key_serial(ctx, v);
+			if (!strncmp(key_desc, "NVMe1R", 6))
+				json_object_object_add(port_obj, "concat",
+						       json_object_new_boolean(true));
+		}
 		json_object_object_add(port_obj, "tls_key",
 				       json_object_new_string(value));
-	JSON_INT_OPTION(cfg, port_obj, nr_io_queues, 0);
-	JSON_INT_OPTION(cfg, port_obj, nr_write_queues, 0);
-	JSON_INT_OPTION(cfg, port_obj, nr_poll_queues, 0);
-	JSON_INT_OPTION(cfg, port_obj, queue_size, 0);
-	JSON_INT_OPTION(cfg, port_obj, keep_alive_tmo, 0);
-	JSON_INT_OPTION(cfg, port_obj, reconnect_delay, 0);
-	if (strcmp(transport, "loop")) {
-		JSON_INT_OPTION(cfg, port_obj, ctrl_loss_tmo,
-				NVMF_DEF_CTRL_LOSS_TMO);
-		JSON_INT_OPTION(cfg, port_obj, fast_io_fail_tmo, 0);
+		json_object_object_add(port_obj, "tls",
+				       json_object_new_boolean(true));
 	}
-	JSON_INT_OPTION(cfg, port_obj, tos, -1);
-	JSON_BOOL_OPTION(cfg, port_obj, duplicate_connect);
-	JSON_BOOL_OPTION(cfg, port_obj, disable_sqflow);
-	JSON_BOOL_OPTION(cfg, port_obj, hdr_digest);
-	JSON_BOOL_OPTION(cfg, port_obj, data_digest);
-	JSON_BOOL_OPTION(cfg, port_obj, concat);
+	value = nvme_ctrl_get_queue_count(c);
+	v = strtoul(value, &endptr, 0);
+	if (value != endptr && v != 0)
+		json_object_object_add(port_obj, "nr_io_queues",
+				       json_object_new_int(v));
+
+	value = nvme_ctrl_get_sqsize(c);
+	v = strtoul(value, &endptr, 0);
+	if (value != endptr && v != 0)
+		json_object_object_add(port_obj, "queue_size",
+				       json_object_new_int(v));
+	value = nvme_ctrl_get_kato(c);
+	v = strtoul(value, &endptr, 0);
+	if (value != endptr && v != 0)
+		json_object_object_add(port_obj, "keep_alive_tmo",
+				       json_object_new_int(v));
+	value = nvme_ctrl_get_reconnect_delay(c);
+	v = strtoul(value, &endptr, 0);
+	if (value != endptr && v != 0)
+		json_object_object_add(port_obj, "reconnect_delay",
+				       json_object_new_int(v));
+	if (strcmp(transport, "loop")) {
+		value = nvme_ctrl_get_ctrl_loss_tmo(c);
+		v = strtoul(value, &endptr, 0);
+		if (value != endptr && v != 0)
+			json_object_object_add(port_obj, "ctrl_loss_tmo",
+					       json_object_new_int(v));
+		value = nvme_ctrl_get_fast_io_fail_tmo(c);
+		v = strtoul(value, &endptr, 0);
+		if (value != endptr && v != 0)
+			json_object_object_add(port_obj, "fast_io_fail_tmo",
+					       json_object_new_int(v));
+	}
+
 	if (nvme_ctrl_is_persistent(c))
 		json_object_object_add(port_obj, "persistent",
 				       json_object_new_boolean(true));
 	if (nvme_ctrl_get_discovery_ctrl(c))
 		json_object_object_add(port_obj, "discovery",
 				       json_object_new_boolean(true));
-
-	json_object_array_add(ctrl_array, port_obj);
 }
 
-static void json_update_subsys(struct json_object *subsys_array,
+static void json_update_port_config(struct nvme_global_ctx *ctx,
+				    struct json_object *port_obj,
+				    struct nvme_fabrics_config *cfg)
+{
+	/* These have no representation in sysfs */
+	JSON_INT_OPTION(cfg, port_obj, tos, -1);
+	JSON_INT_OPTION(cfg, port_obj, nr_write_queues, 0);
+	JSON_INT_OPTION(cfg, port_obj, nr_poll_queues, 0);
+	JSON_BOOL_OPTION(cfg, port_obj, duplicate_connect);
+	JSON_BOOL_OPTION(cfg, port_obj, disable_sqflow);
+	JSON_BOOL_OPTION(cfg, port_obj, hdr_digest);
+	JSON_BOOL_OPTION(cfg, port_obj, data_digest);
+}
+
+static void json_update_subsys(struct nvme_global_ctx *ctx,
+			       struct json_object *subsys_array,
 			       nvme_subsystem_t s)
 {
 	nvme_ctrl_t c;
@@ -367,7 +395,10 @@ static void json_update_subsys(struct json_object *subsys_array,
 				       json_object_new_string(app));
 	port_array = json_object_new_array();
 	nvme_subsystem_for_each_ctrl(s, c) {
-		json_update_port(port_array, c);
+		struct json_object *port_obj = json_object_new_object();
+		json_update_port(ctx, port_obj, c);
+		json_update_port_config(ctx, port_obj, &c->cfg);
+		json_object_array_add(port_array, port_obj);
 	}
 	if (json_object_array_length(port_array)) {
 		json_object_object_add(subsys_obj, "ports", port_array);
@@ -413,7 +444,7 @@ int json_update_config(struct nvme_global_ctx *ctx, int fd)
 					       json_object_new_boolean(h->pdc_enabled));
 		subsys_array = json_object_new_array();
 		nvme_for_each_subsystem(h, s) {
-			json_update_subsys(subsys_array, s);
+			json_update_subsys(ctx, subsys_array, s);
 		}
 		if (json_object_array_length(subsys_array)) {
 			json_object_object_add(host_obj, "subsystems",
@@ -437,87 +468,8 @@ int json_update_config(struct nvme_global_ctx *ctx, int fd)
 	return ret;
 }
 
-static void json_dump_ctrl(struct json_object *ctrl_array, nvme_ctrl_t c)
-{
-	struct nvme_fabrics_config *cfg = nvme_ctrl_get_config(c);
-	struct json_object *ctrl_obj = json_object_new_object();
-	const char *name, *transport, *value;
-
-	name = nvme_ctrl_get_name(c);
-	if (name && strlen(name))
-		json_object_object_add(ctrl_obj, "name",
-				       json_object_new_string(name));
-	transport = nvme_ctrl_get_transport(c);
-	json_object_object_add(ctrl_obj, "transport",
-			       json_object_new_string(transport));
-	value = nvme_ctrl_get_traddr(c);
-	if (value)
-		json_object_object_add(ctrl_obj, "traddr",
-				       json_object_new_string(value));
-	value = nvme_ctrl_get_host_traddr(c);
-	if (value)
-		json_object_object_add(ctrl_obj, "host_traddr",
-				       json_object_new_string(value));
-	value = nvme_ctrl_get_host_iface(c);
-	if (value)
-		json_object_object_add(ctrl_obj, "host_iface",
-				       json_object_new_string(value));
-	value = nvme_ctrl_get_trsvcid(c);
-	if (value)
-		json_object_object_add(ctrl_obj, "trsvcid",
-				       json_object_new_string(value));
-	value = nvme_ctrl_get_dhchap_host_key(c);
-	if (value)
-		json_object_object_add(ctrl_obj, "dhchap_key",
-				       json_object_new_string(value));
-	value = nvme_ctrl_get_dhchap_ctrl_key(c);
-	if (value)
-		json_object_object_add(ctrl_obj, "dhchap_ctrl_key",
-				       json_object_new_string(value));
-	JSON_INT_OPTION(cfg, ctrl_obj, nr_io_queues, 0);
-	JSON_INT_OPTION(cfg, ctrl_obj, nr_write_queues, 0);
-	JSON_INT_OPTION(cfg, ctrl_obj, nr_poll_queues, 0);
-	JSON_INT_OPTION(cfg, ctrl_obj, queue_size, 0);
-	JSON_INT_OPTION(cfg, ctrl_obj, keep_alive_tmo, 0);
-	JSON_INT_OPTION(cfg, ctrl_obj, reconnect_delay, 0);
-	if (strcmp(transport, "loop")) {
-		JSON_INT_OPTION(cfg, ctrl_obj, ctrl_loss_tmo,
-				NVMF_DEF_CTRL_LOSS_TMO);
-		JSON_INT_OPTION(cfg, ctrl_obj, fast_io_fail_tmo, 0);
-	}
-	JSON_INT_OPTION(cfg, ctrl_obj, tos, -1);
-	JSON_BOOL_OPTION(cfg, ctrl_obj, duplicate_connect);
-	JSON_BOOL_OPTION(cfg, ctrl_obj, disable_sqflow);
-	JSON_BOOL_OPTION(cfg, ctrl_obj, hdr_digest);
-	JSON_BOOL_OPTION(cfg, ctrl_obj, data_digest);
-	if (!strcmp(transport, "tcp")) {
-		JSON_BOOL_OPTION(cfg, ctrl_obj, tls);
-
-		value = nvme_ctrl_get_keyring(c);
-		if (value)
-			json_object_object_add(ctrl_obj, "keyring",
-					       json_object_new_string(value));
-		value = nvme_ctrl_get_tls_key_identity(c);
-		if (value)
-			json_object_object_add(ctrl_obj, "tls_key_identity",
-					       json_object_new_string(value));
-		value = nvme_ctrl_get_tls_key(c);
-		if (value)
-			json_object_object_add(ctrl_obj, "tls_key",
-					       json_object_new_string(value));
-	}
-	JSON_BOOL_OPTION(cfg, ctrl_obj, concat);
-	if (nvme_ctrl_is_persistent(c))
-		json_object_object_add(ctrl_obj, "persistent",
-				       json_object_new_boolean(true));
-	if (nvme_ctrl_get_discovery_ctrl(c))
-		json_object_object_add(ctrl_obj, "discovery",
-				       json_object_new_boolean(true));
-	json_object_array_add(ctrl_array, ctrl_obj);
-}
-
-static unsigned int json_dump_subsys_multipath(nvme_subsystem_t s,
-				struct json_object *ns_array)
+static unsigned int json_dump_subsys_multipath(struct nvme_global_ctx *ctx,
+		nvme_subsystem_t s, struct json_object *ns_array)
 {
 	nvme_ns_t n;
 	nvme_path_t p;
@@ -537,6 +489,7 @@ static unsigned int json_dump_subsys_multipath(nvme_subsystem_t s,
 		nvme_namespace_for_each_path(n, p) {
 			struct json_object *path_obj;
 			struct json_object *ctrl_array;
+			struct json_object *ctrl_obj;
 			nvme_ctrl_t c;
 
 			path_obj = json_object_new_object();
@@ -551,8 +504,12 @@ static unsigned int json_dump_subsys_multipath(nvme_subsystem_t s,
 
 			c = nvme_path_get_ctrl(p);
 			ctrl_array = json_object_new_array();
-			json_dump_ctrl(ctrl_array, c);
-			json_object_object_add(path_obj, "controller", ctrl_array);
+			ctrl_obj = json_object_new_object();
+			json_update_port(ctx, ctrl_obj, c);
+			json_update_port_config(ctx, ctrl_obj, &c->cfg);
+			json_object_array_add(ctrl_array, ctrl_obj);
+			json_object_object_add(path_obj, "controller",
+					       ctrl_array);
 			json_object_array_add(path_array, path_obj);
 		}
 		json_object_object_add(ns_obj, "paths", path_array);
@@ -562,8 +519,8 @@ static unsigned int json_dump_subsys_multipath(nvme_subsystem_t s,
 	return i;
 }
 
-static void json_dump_subsys_non_multipath(nvme_subsystem_t s,
-		struct json_object *ns_array)
+static void json_dump_subsys_non_multipath(struct nvme_global_ctx *ctx,
+		nvme_subsystem_t s, struct json_object *ns_array)
 {
 	nvme_ctrl_t c;
 	nvme_ns_t n;
@@ -572,6 +529,7 @@ static void json_dump_subsys_non_multipath(nvme_subsystem_t s,
 		nvme_ctrl_for_each_ns(c, n) {
 			struct json_object *ctrl_array;
 			struct json_object *ns_obj;
+			struct json_object *ctrl_obj;
 
 			ns_obj = json_object_new_object();
 			json_object_object_add(ns_obj, "nsid",
@@ -580,7 +538,10 @@ static void json_dump_subsys_non_multipath(nvme_subsystem_t s,
 				json_object_new_string(nvme_ns_get_name(n)));
 
 			ctrl_array = json_object_new_array();
-			json_dump_ctrl(ctrl_array, c);
+			ctrl_obj = json_object_new_object();
+			json_update_port(ctx, ctrl_obj, c);
+			json_update_port_config(ctx, ctrl_obj, &c->cfg);
+			json_object_array_add(ctrl_array, ctrl_obj);
 			json_object_object_add(ns_obj, "controller", ctrl_array);
 
 			json_object_array_add(ns_array, ns_obj);
@@ -588,8 +549,9 @@ static void json_dump_subsys_non_multipath(nvme_subsystem_t s,
 	}
 }
 
-static void json_dump_subsys(struct json_object *subsys_array,
-			       nvme_subsystem_t s)
+static void json_dump_subsys(struct nvme_global_ctx *ctx,
+			     struct json_object *subsys_array,
+			     nvme_subsystem_t s)
 {
 	struct json_object *subsys_obj = json_object_new_object();
 	struct json_object *ns_array;
@@ -600,8 +562,8 @@ static void json_dump_subsys(struct json_object *subsys_array,
 			       json_object_new_string(nvme_subsystem_get_subsysnqn(s)));
 
 	ns_array = json_object_new_array();
-	if (!json_dump_subsys_multipath(s, ns_array))
-		json_dump_subsys_non_multipath(s, ns_array);
+	if (!json_dump_subsys_multipath(ctx, s, ns_array))
+		json_dump_subsys_non_multipath(ctx, s, ns_array);
 
 	if (json_object_array_length(ns_array))
 		json_object_object_add(subsys_obj, "namespaces", ns_array);
@@ -639,7 +601,7 @@ int json_dump_tree(struct nvme_global_ctx *ctx)
 					       json_object_new_boolean(h->pdc_enabled));
 		subsys_array = json_object_new_array();
 		nvme_for_each_subsystem(h, s) {
-			json_dump_subsys(subsys_array, s);
+			json_dump_subsys(ctx, subsys_array, s);
 		}
 		if (json_object_array_length(subsys_array))
 			json_object_object_add(host_obj, "subsystems",
