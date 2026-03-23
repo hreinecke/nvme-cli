@@ -336,6 +336,7 @@ struct nvmf_context {
 	int default_keep_alive_timeout;
 
 	/* common fabrics configuraiton */
+	struct nvme_global_ctx *ctx;
 	const char *device;
 	bool persistent;
 	struct nvme_fabrics_config *cfg;
@@ -355,8 +356,8 @@ struct nvmf_context {
 	/* authentication and transport encryption configuration */
 	const char *hostkey;
 	const char *ctrlkey;
-	const char *keyring;
-	const char *tls_key;
+	long keyring;
+	long tls_key;
 	const char *tls_key_identity;
 
 	void *user_data;

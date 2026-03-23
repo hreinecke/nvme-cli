@@ -207,6 +207,7 @@ __public int nvmf_context_create(struct nvme_global_ctx *ctx,
 	fctx->decide_retry = decide_retry;
 	fctx->connected = connected;
 	fctx->already_connected = already_connected;
+	fctx->ctx = ctx;
 
 	fctx->user_data = user_data;
 
@@ -280,10 +281,28 @@ __public int nvmf_context_set_crypto(struct nvmf_context *fctx,
 		const char *keyring, const char *tls_key,
 		const char *tls_key_identity)
 {
+	int ret;
+
 	fctx->hostkey = hostkey;
 	fctx->ctrlkey = ctrlkey;
-	fctx->keyring = keyring;
-	fctx->tls_key = tls_key;
+	if (keyring) {
+		ret = nvme_lookup_keyring(fctx->ctx, keyring, &fctx->keyring);
+		if (ret < 0) {
+			fctx->keyring = 0;
+			return ret;
+		}
+	}
+	if (tls_key) {
+		ret = nvme_set_keyring(fctx->ctx, fctx->keyring);
+		if (ret < 0)
+			return ret;
+		ret = nvme_lookup_key(fctx->ctx, "psk", tls_key,
+				      &fctx->tls_key);
+		if (ret < 0) {
+			fctx->tls_key = 0;
+			return ret;
+		}
+	}
 	fctx->tls_key_identity = tls_key_identity;
 
 	return 0;
@@ -1851,32 +1870,17 @@ static int set_discovery_kato(struct nvmf_context *fctx,
 	return tmo;
 }
 
-static void nvme_parse_tls_args(const char *keyring, const char *tls_key,
-				const char *tls_key_identity,
+static void nvme_parse_tls_args(struct nvmf_context *fctx,
 				struct nvme_fabrics_config *cfg, nvme_ctrl_t c)
 {
-	if (keyring) {
-		char *endptr;
-		long id = strtol(keyring, &endptr, 0);
+	if (fctx->keyring)
+		cfg->keyring = fctx->keyring;
 
-		if (endptr != keyring)
-			cfg->keyring = id;
-		else
-			nvme_ctrl_set_keyring(c, keyring);
-	}
+	if (fctx->tls_key_identity)
+		nvme_ctrl_set_tls_key_identity(c, fctx->tls_key_identity);
 
-	if (tls_key_identity)
-		nvme_ctrl_set_tls_key_identity(c, tls_key_identity);
-
-	if (tls_key) {
-		char *endptr;
-		long id = strtol(tls_key, &endptr, 0);
-
-		if (endptr != tls_key)
-			cfg->tls_key = id;
-		else
-			nvme_ctrl_set_tls_key(c, tls_key);
-	}
+	if (fctx->tls_key)
+		cfg->tls_key = fctx->tls_key;
 }
 
 
@@ -2414,8 +2418,7 @@ __public int nvmf_config_modify(struct nvme_global_ctx *ctx,
 	if (fctx->ctrlkey)
 		nvme_ctrl_set_dhchap_ctrl_key(c, fctx->ctrlkey);
 
-	nvme_parse_tls_args(fctx->keyring, fctx->tls_key,
-			    fctx->tls_key_identity, fctx->cfg, c);
+	nvme_parse_tls_args(fctx, fctx->cfg, c);
 
 	nvmf_update_config(c, fctx->cfg);
 
@@ -3012,8 +3015,7 @@ __public int nvmf_connect(struct nvme_global_ctx *ctx, struct nvmf_context *fctx
 			nvme_ctrl_set_dhchap_ctrl_key(c, fctx->ctrlkey);
 	}
 
-	nvme_parse_tls_args(fctx->keyring, fctx->tls_key,
-		fctx->tls_key_identity, fctx->cfg, c);
+	nvme_parse_tls_args(fctx, fctx->cfg, c);
 
 	/*
 	 * We are connecting to a discovery controller, so let's treat
