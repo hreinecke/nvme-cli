@@ -66,8 +66,6 @@ LIBNVME_ACCESSORS_3 {
 		nvme_ctrl_get_host_iface;
 		nvme_ctrl_get_discovery_ctrl;
 		nvme_ctrl_set_discovery_ctrl;
-		nvme_ctrl_get_unique_discovery_ctrl;
-		nvme_ctrl_set_unique_discovery_ctrl;
 		nvme_ctrl_get_discovered;
 		nvme_ctrl_set_discovered;
 		nvme_ctrl_get_persistent;

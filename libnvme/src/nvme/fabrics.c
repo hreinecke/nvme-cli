@@ -700,7 +700,6 @@ static int build_options(nvme_host_t h, nvme_ctrl_t c, char **argstr)
 
 	if (!strcmp(nvme_ctrl_get_subsysnqn(c), NVME_DISC_SUBSYS_NAME)) {
 		nvme_ctrl_set_discovery_ctrl(c, true);
-		nvme_ctrl_set_unique_discovery_ctrl(c, false);
 		discovery_nqn = true;
 	}
 
@@ -1160,15 +1159,11 @@ static int nvmf_connect_disc_entry(nvme_host_t h,
 	switch (e->subtype) {
 	case NVME_NQN_CURR:
 		nvme_ctrl_set_discovered(c, true);
-		nvme_ctrl_set_unique_discovery_ctrl(c,
-				strcmp(e->subnqn, NVME_DISC_SUBSYS_NAME));
 		break;
 	case NVME_NQN_DISC:
 		if (discover)
 			*discover = true;
 		nvme_ctrl_set_discovery_ctrl(c, true);
-		nvme_ctrl_set_unique_discovery_ctrl(c,
-				strcmp(e->subnqn, NVME_DISC_SUBSYS_NAME));
 		break;
 	default:
 		nvme_msg(h->ctx, LOG_ERR, "unsupported subtype %d\n",
@@ -1176,7 +1171,6 @@ static int nvmf_connect_disc_entry(nvme_host_t h,
 		fallthrough;
 	case NVME_NQN_NVME:
 		nvme_ctrl_set_discovery_ctrl(c, false);
-		nvme_ctrl_set_unique_discovery_ctrl(c, false);
 		break;
 	}
 
@@ -2039,7 +2033,7 @@ __public const char *nvmf_get_default_trsvcid(const char *transport,
 static bool is_persistent_discovery_ctrl(nvme_host_t h, nvme_ctrl_t c)
 {
 	if (nvme_host_is_pdc_enabled(h, DEFAULT_PDC_ENABLED))
-		return nvme_ctrl_get_unique_discovery_ctrl(c);
+		return nvme_ctrl_is_unique_discovery_ctrl(c);
 
 	return false;
 }
@@ -2072,11 +2066,11 @@ static int __create_discovery_ctrl(struct nvme_global_ctx *ctx,
 		return ret;
 
 	nvme_ctrl_set_discovery_ctrl(c, true);
-	nvme_ctrl_set_unique_discovery_ctrl(c,
-		     strcmp(fctx->subsysnqn, NVME_DISC_SUBSYS_NAME));
 	tmo = set_discovery_kato(fctx, cfg);
 
-	if (nvme_ctrl_get_unique_discovery_ctrl(c) && fctx->hostkey) {
+	if (nvme_ctrl_get_discovery_ctrl(c) &&
+	    strcmp(fctx->subsysnqn, NVME_DISC_SUBSYS_NAME) &&
+	    fctx->hostkey) {
 		nvme_ctrl_set_dhchap_host_key(c, fctx->hostkey);
 		if (fctx->ctrlkey)
 			nvme_ctrl_set_dhchap_ctrl_key(c, fctx->ctrlkey);
@@ -2106,7 +2100,7 @@ static int nvmf_create_discovery_ctrl(struct nvme_global_ctx *ctx,
 	if (ret)
 		return ret;
 
-	if (nvme_ctrl_get_unique_discovery_ctrl(c)) {
+	if (nvme_ctrl_is_unique_discovery_ctrl(c)) {
 		*ctrl = c;
 		return 0;
 	}

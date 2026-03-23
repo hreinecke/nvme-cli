@@ -890,7 +890,6 @@ __public nvme_subsystem_t nvme_ctrl_get_subsystem(nvme_ctrl_t c)
 	return c->s;
 }
 
-
 __public char *nvme_ctrl_get_src_addr(nvme_ctrl_t c, char *src_addr, size_t src_addr_len)
 {
 	size_t l;
@@ -924,6 +923,12 @@ __public const char *nvme_ctrl_get_state(nvme_ctrl_t c)
 	c->state = nvme_get_ctrl_attr(c, "state");
 	free(state);
 	return c->state;
+}
+
+__public bool nvme_ctrl_is_unique_discovery_ctrl(nvme_ctrl_t c)
+{
+	return (c->discovery_ctrl &&
+		strcmp(c->subsysnqn, NVME_DISC_SUBSYS_NAME));
 }
 
 __public struct nvme_fabrics_config *nvme_ctrl_get_config(nvme_ctrl_t c)

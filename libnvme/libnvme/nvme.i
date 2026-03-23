@@ -415,6 +415,7 @@ struct nvme_ctrl {
 	%immutable dctype;
 	%immutable phy_slot;
 	%immutable discovered;
+	%immutable unique_discovery_ctrl;
 
 	const char *cntrltype;  // Do not put in %extend because there's no getter method in libnvme.map
 	const char *dctype;     // Do not put in %extend because there's no getter method in libnvme.map
@@ -963,10 +964,7 @@ struct nvme_ns {
 	}
 
 	bool nvme_ctrl_unique_discovery_ctrl_get(nvme_ctrl_t c) {
-		return nvme_ctrl_get_unique_discovery_ctrl(c);
-	}
-	void nvme_ctrl_unique_discovery_ctrl_set(nvme_ctrl_t c, bool unique) {
-		nvme_ctrl_set_unique_discovery_ctrl(c, unique);
+		return nvme_ctrl_is_unique_discovery_ctrl(c);
 	}
 
 	const char *nvme_ctrl_keyring_get(nvme_ctrl_t c) {
