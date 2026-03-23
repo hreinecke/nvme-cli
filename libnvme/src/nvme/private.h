@@ -293,6 +293,7 @@ struct nvme_global_ctx {
 	char *application;
 	struct list_head endpoints; /* MI endpoints */
 	struct list_head hosts;
+	struct list_head contexts;
 	struct nvme_log log;
 	bool mi_probe_enabled;
 	bool ioctl_probing;
@@ -309,6 +310,8 @@ struct nvme_global_ctx {
 };
 
 struct nvmf_context {
+	struct list_node entry;
+
 	/* common callbacks */
 	bool (*decide_retry)(struct nvmf_context *fctx, int err,
 			void *user_data);

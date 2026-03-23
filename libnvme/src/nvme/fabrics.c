@@ -211,8 +211,15 @@ __public int nvmf_context_create(struct nvme_global_ctx *ctx,
 
 	fctx->user_data = user_data;
 
+	list_add_tail(&ctx->contexts, &fctx->entry);
 	*fctxp = fctx;
 	return 0;
+}
+
+__public void nvmf_context_delete(struct nvmf_context *fctx)
+{
+	list_del_init(&fctx->entry);
+	free(fctx);
 }
 
 __public int nvmf_context_set_discovery_cbs(struct nvmf_context *fctx,

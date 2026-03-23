@@ -385,7 +385,7 @@ static int create_common_context(struct nvme_global_ctx *ctx,
 	return 0;
 
 err:
-	free(fctx);
+	nvmf_context_delete(fctx);
 	return err;
 }
 
@@ -421,7 +421,7 @@ static int create_discovery_context(struct nvme_global_ctx *ctx,
 	return 0;
 
 err:
-	free(fctx);
+	nvmf_context_delete(fctx);
 	return err;
 }
 
@@ -588,7 +588,7 @@ int fabrics_connect(const char *desc, int argc, char **argv)
 	char *config_file = NULL;
 	char *context = NULL;
 	_cleanup_nvme_global_ctx_ struct nvme_global_ctx *ctx = NULL;
-	_cleanup_free_ struct nvmf_context *fctx = NULL;
+	struct nvmf_context *fctx = NULL;
 	_cleanup_nvme_ctrl_ nvme_ctrl_t c = NULL;
 	int ret;
 	nvme_print_flags_t flags;
@@ -668,20 +668,24 @@ do_connect:
 	if (ret)
 		return ret;
 
-	if (config_file)
-		return nvmf_connect_config_json(ctx, fctx);
+	if (config_file) {
+		ret = nvmf_connect_config_json(ctx, fctx);
+		goto out;
+	}
 
 	ret = nvmf_connect(ctx, fctx);
 	if (ret) {
 		fprintf(stderr, "failed to connect: %s\n",
 			nvme_strerror(-ret));
-		return ret;
+		goto out;
 	}
 
 	if (dump_config)
 		nvme_dump_config(ctx, STDERR_FILENO);
 
-	return 0;
+ out:
+	nvmf_context_delete(fctx);
+	return ret;
 }
 
 static nvme_ctrl_t lookup_nvme_ctrl(struct nvme_global_ctx *ctx,
@@ -926,7 +930,7 @@ int fabrics_config(const char *desc, int argc, char **argv)
 	}
 
 	if (modify_config) {
-		_cleanup_free_ struct nvmf_context *fctx = NULL;
+		struct nvmf_context *fctx = NULL;
 
 		if (!fa.subsysnqn) {
 			fprintf(stderr,
@@ -946,6 +950,7 @@ int fabrics_config(const char *desc, int argc, char **argv)
 			return ret;
 
 		ret = nvmf_config_modify(ctx, fctx);
+		nvmf_context_delete(fctx);
 		if (ret) {
 			fprintf(stderr, "failed to update config\n");
 			return ret;

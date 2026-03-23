@@ -56,6 +56,7 @@ __public struct nvme_global_ctx *nvme_create_global_ctx(FILE *fp, int log_level)
 
 	list_head_init(&ctx->hosts);
 	list_head_init(&ctx->endpoints);
+	list_head_init(&ctx->contexts);
 
 	ctx->ioctl_probing = true;
 	ctx->mi_probe_enabled = nvme_mi_probe_enabled_default();

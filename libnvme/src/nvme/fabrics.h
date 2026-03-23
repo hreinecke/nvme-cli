@@ -382,6 +382,12 @@ int nvmf_context_create(struct nvme_global_ctx *ctx,
 		void *user_data, struct nvmf_context **fctxp);
 
 /**
+ * nvmf_context_delete() - Delete a fabrics context
+ * @fctx: Fabrics context
+ */
+void nvmf_context_delete(struct nvmf_context *fctx);
+
+/**
  * nvmf_context_set_discovery_cbs() - Set discovery callbacks for context
  * @fctx: Fabrics context
  * @discovery_log: Callback for discovery log events
