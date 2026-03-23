@@ -68,8 +68,6 @@ LIBNVME_ACCESSORS_3 {
 		nvme_ctrl_set_discovery_ctrl;
 		nvme_ctrl_get_discovered;
 		nvme_ctrl_set_discovered;
-		nvme_ctrl_get_persistent;
-		nvme_ctrl_set_persistent;
 		nvme_ctrl_get_phy_slot;
 		nvme_ctrl_get_ctrl_loss_tmo;
 		nvme_ctrl_set_ctrl_loss_tmo;

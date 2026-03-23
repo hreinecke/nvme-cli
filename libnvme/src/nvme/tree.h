@@ -735,6 +735,14 @@ char *nvme_ctrl_get_src_addr(nvme_ctrl_t c, char *src_addr, size_t src_addr_len)
 bool nvme_ctrl_is_unique_discovery_ctrl(nvme_ctrl_t c);
 
 /**
+ * nvme_ctrl_is_persistent - Check for persistent discovery controller
+ * @c: Controller instance
+ *
+ * Return: %true if @c is a persistent discovery controller, %false otherwise.
+ */
+bool nvme_ctrl_is_persistent(nvme_ctrl_t c);
+
+/**
  * nvme_ctrl_get_state() - Running state of a controller
  * @c:	Controller instance
  *

@@ -2032,8 +2032,9 @@ __public const char *nvmf_get_default_trsvcid(const char *transport,
 
 static bool is_persistent_discovery_ctrl(nvme_host_t h, nvme_ctrl_t c)
 {
-	if (nvme_host_is_pdc_enabled(h, DEFAULT_PDC_ENABLED))
-		return nvme_ctrl_is_unique_discovery_ctrl(c);
+	if (nvme_host_is_pdc_enabled(h, DEFAULT_PDC_ENABLED) &&
+	    nvme_ctrl_is_unique_discovery_ctrl(c))
+		return true;
 
 	return false;
 }
@@ -2201,7 +2202,8 @@ int _discovery_config_json(struct nvme_global_ctx *ctx,
 	else
 		nfctx.subsysnqn = NVME_DISC_SUBSYS_NAME;
 
-	if (nvme_ctrl_get_persistent(c))
+	if (strcmp(nfctx.subsysnqn, NVME_DISC_SUBSYS_NAME) &&
+	    fctx->cfg->keep_alive_tmo > 0)
 		nfctx.persistent = true;
 
 	memcpy(&cfg, fctx->cfg, sizeof(cfg));

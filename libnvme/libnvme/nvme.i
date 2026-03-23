@@ -416,6 +416,7 @@ struct nvme_ctrl {
 	%immutable phy_slot;
 	%immutable discovered;
 	%immutable unique_discovery_ctrl;
+	%immutable persistent;
 
 	const char *cntrltype;  // Do not put in %extend because there's no getter method in libnvme.map
 	const char *dctype;     // Do not put in %extend because there's no getter method in libnvme.map
@@ -898,10 +899,7 @@ struct nvme_ns {
 	}
 
 	bool nvme_ctrl_persistent_get(struct nvme_ctrl *c) {
-		return nvme_ctrl_get_persistent(c);
-	}
-	void nvme_ctrl_persistent_set(struct nvme_ctrl *c, bool persistent) {
-		nvme_ctrl_set_persistent(c, persistent);
+		return nvme_ctrl_is_persistent(c);
 	}
 
 	const char *nvme_ctrl_phy_slot_get(nvme_ctrl_t c) {
