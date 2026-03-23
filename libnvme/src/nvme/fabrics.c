@@ -1114,7 +1114,6 @@ __public int nvmf_connect_ctrl(nvme_ctrl_t c)
 static int nvmf_connect_disc_entry(nvme_host_t h,
 		struct nvmf_disc_log_entry *e,
 		struct nvmf_context *fctx,
-		const struct nvme_fabrics_config *cfg,
 		bool *discover, nvme_ctrl_t *cp)
 {
 	nvme_ctrl_t c;
@@ -1197,22 +1196,22 @@ static int nvmf_connect_disc_entry(nvme_host_t h,
 
 	if (e->treq & NVMF_TREQ_DISABLE_SQFLOW &&
 	    nvmf_check_option(h->ctx, disable_sqflow))
-		c->cfg.disable_sqflow = true;
+		fctx->cfg->disable_sqflow = true;
 
 	if (e->trtype == NVMF_TRTYPE_TCP &&
 	    e->tsas.tcp.sectype != NVMF_TCP_SECTYPE_NONE) {
 		if (e->treq & NVMF_TREQ_REQUIRED) {
 			nvme_msg(h->ctx, LOG_DEBUG, "setting --tls due to treq %s and sectype %s\n",
 					nvmf_treq_str(e->treq), nvmf_sectype_str(e->tsas.tcp.sectype));
-			c->cfg.tls = true;
+			fctx->cfg->tls = true;
 		} else if (e->treq & NVMF_TREQ_NOT_REQUIRED) {
 			nvme_msg(h->ctx, LOG_DEBUG, "setting --concat due to treq %s and sectype %s\n",
 					nvmf_treq_str(e->treq), nvmf_sectype_str(e->tsas.tcp.sectype));
-			c->cfg.concat = true;
+			fctx->cfg->concat = true;
 		}
 	}
 
-	ret = nvmf_add_ctrl(h, c, cfg);
+	ret = nvmf_add_ctrl(h, c, fctx->cfg);
 	if (!ret) {
 		*cp = c;
 		return 0;
@@ -1222,8 +1221,8 @@ static int nvmf_connect_disc_entry(nvme_host_t h,
 		/* disable_sqflow is unrecognized option on older kernels */
 		nvme_msg(h->ctx, LOG_INFO, "failed to connect controller, "
 			 "retry with disabling SQ flow control\n");
-		c->cfg.disable_sqflow = false;
-		ret = nvmf_add_ctrl(h, c, cfg);
+		fctx->cfg->disable_sqflow = false;
+		ret = nvmf_add_ctrl(h, c, fctx->cfg);
 		if (!ret) {
 			*cp = c;
 			return 0;
@@ -1975,7 +1974,7 @@ static int _nvmf_discovery(struct nvme_global_ctx *ctx,
 			disconnect = false;
 		}
 
-		err = nvmf_connect_disc_entry(h, e, &nfctx, nfctx.cfg,
+		err = nvmf_connect_disc_entry(h, e, &nfctx,
 			&discover, &child);
 
 		nfctx.cfg->keep_alive_tmo = tmo;
@@ -2512,8 +2511,7 @@ static bool validate_uri(struct nvme_global_ctx *ctx,
 static int nbft_connect(struct nvme_global_ctx *ctx,
 		struct nvmf_context *fctx, struct nvme_host *h,
 		struct nvmf_disc_log_entry *e,
-		struct nbft_info_subsystem_ns *ss,
-		struct nvme_fabrics_config *cfg)
+		struct nbft_info_subsystem_ns *ss)
 {
 	nvme_ctrl_t c;
 	int saved_log_level;
@@ -2539,10 +2537,10 @@ static int nbft_connect(struct nvme_global_ctx *ctx,
 	if (e) {
 		if (e->trtype == NVMF_TRTYPE_TCP &&
 		    e->tsas.tcp.sectype != NVMF_TCP_SECTYPE_NONE)
-			cfg->tls = true;
+			fctx->cfg->tls = true;
 	}
 
-	ret = nvmf_add_ctrl(h, c, cfg);
+	ret = nvmf_add_ctrl(h, c, fctx->cfg);
 
 	/* Resume logging */
 	if (ss && ss->unavailable && saved_log_level < 1)
@@ -2574,8 +2572,7 @@ static int nbft_connect(struct nvme_global_ctx *ctx,
 
 static int nbft_discovery(struct nvme_global_ctx *ctx,
 		struct nvmf_context *fctx, struct nbft_info_discovery *dd,
-		struct nvme_host *h, struct nvme_ctrl *c,
-		struct nvme_fabrics_config *defcfg)
+		struct nvme_host *h, struct nvme_ctrl *c)
 {
 	struct nvmf_discovery_log *log = NULL;
 	int ret;
@@ -2602,12 +2599,13 @@ static int nbft_discovery(struct nvme_global_ctx *ctx,
 		struct nvmf_disc_log_entry *e = &log->entries[i];
 		struct nvmf_context nfctx = *fctx;
 		nvme_ctrl_t cl;
-		int tmo = defcfg->keep_alive_tmo;
+		int tmo = fctx->cfg->keep_alive_tmo;
 
 		nfctx.subsysnqn = e->subnqn;
 		nfctx.transport = nvmf_trtype_str(e->trtype);
 		nfctx.traddr = e->traddr;
 		nfctx.trsvcid = e->trsvcid;
+		nfctx.cfg = fctx->cfg;
 
 		if (e->subtype == NVME_NQN_CURR)
 			continue;
@@ -2626,15 +2624,14 @@ static int nbft_discovery(struct nvme_global_ctx *ctx,
 			nvme_ctrl_t child;
 
 			ret = nvmf_connect_disc_entry(h, e, &nfctx,
-				defcfg, NULL, &child);
+				NULL, &child);
 			if (ret)
 				continue;
-			nbft_discovery(ctx, &nfctx, dd, h, child, defcfg);
+			nbft_discovery(ctx, &nfctx, dd, h, child);
 			nvme_disconnect_ctrl(child);
 			nvme_free_ctrl(child);
 		} else {
-			ret = nbft_connect(ctx, &nfctx, h, e, NULL,
-				defcfg);
+			ret = nbft_connect(ctx, &nfctx, h, e, NULL);
 
 			/*
 			 * With TCP/DHCP, it can happen that the OS
@@ -2647,8 +2644,7 @@ static int nbft_discovery(struct nvme_global_ctx *ctx,
 				const char *htradr = nfctx.host_traddr;
 
 				nfctx.host_traddr = NULL;
-				ret = nbft_connect(ctx, &nfctx, h, e, NULL,
-					defcfg);
+				ret = nbft_connect(ctx, &nfctx, h, e, NULL);
 
 				if (ret == 0)
 					nvme_msg(ctx, LOG_INFO,
@@ -2665,7 +2661,7 @@ static int nbft_discovery(struct nvme_global_ctx *ctx,
 				break;
 		}
 
-		defcfg->keep_alive_tmo = tmo;
+		fctx->cfg->keep_alive_tmo = tmo;
 	}
 
 	free(log);
@@ -2758,9 +2754,9 @@ __public int nvmf_discovery_nbft(struct nvme_global_ctx *ctx,
 				nfctx.traddr = (*ss)->traddr;
 				nfctx.trsvcid = (*ss)->trsvcid;
 				nfctx.host_iface = NULL;
+				nfctx.cfg = fctx->cfg;
 
-				rr = nbft_connect(ctx, &nfctx, h, NULL,
-					*ss, fctx->cfg);
+				rr = nbft_connect(ctx, &nfctx, h, NULL, *ss);
 
 				/*
 				 * With TCP/DHCP, it can happen that the OS
@@ -2773,7 +2769,7 @@ __public int nvmf_discovery_nbft(struct nvme_global_ctx *ctx,
 					nfctx.host_traddr = NULL;
 
 					rr = nbft_connect(ctx, &nfctx, h, NULL,
-						*ss, fctx->cfg);
+						*ss);
 
 					if (rr == 0)
 						nvme_msg(ctx, LOG_INFO,
@@ -2873,7 +2869,7 @@ __public int nvmf_discovery_nbft(struct nvme_global_ctx *ctx,
 				goto out_free;
 			}
 
-			rr = nbft_discovery(ctx, &nfctx, *dd, h, c, fctx->cfg);
+			rr = nbft_discovery(ctx, &nfctx, *dd, h, c);
 			if (!persistent)
 				nvme_disconnect_ctrl(c);
 			nvme_free_ctrl(c);
