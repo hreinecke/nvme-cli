@@ -342,6 +342,7 @@ struct nvmf_context {
 	struct nvme_global_ctx *ctx;
 	const char *device;
 	bool persistent;
+	bool discovery;
 	struct nvme_fabrics_config cfg;
 
 	/* connection configuration */

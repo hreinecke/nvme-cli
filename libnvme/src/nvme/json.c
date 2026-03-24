@@ -17,6 +17,23 @@
 #include "cleanup.h"
 #include "private.h"
 
+struct nvmf_args {
+	const char *subsysnqn;
+	const char *transport;
+	const char *traddr;
+	const char *host_traddr;
+	const char *host_iface;
+	const char *trsvcid;
+	const char *hostnqn;
+	const char *hostid;
+	const char *hostkey;
+	const char *ctrlkey;
+	const char *keyring;
+	const char *tls_key;
+	const char *tls_key_identity;
+	const char *application;
+};
+
 #define JSON_UPDATE_INT_OPTION(c, k, a, o)				\
 	if (!strcmp(# a, k ) && !c->a) c->a = json_object_get_int(o);
 #define JSON_UPDATE_BOOL_OPTION(c, k, a, o)				\
@@ -60,73 +77,81 @@ static void json_update_attributes(struct nvme_fabrics_config *cfg,
 	}
 }
 
-static void json_parse_port(nvme_subsystem_t s, struct json_object *port_obj)
+static void json_parse_port(struct nvme_global_ctx *ctx,
+			    struct nvmf_args *fa, struct json_object *port_obj)
 {
-	nvme_ctrl_t c;
 	struct json_object *attr_obj;
-	struct nvmf_context fctx = {};
+	struct nvmf_context *fctx;
+	struct nvme_fabrics_config *cfg;
+	const char *hostkey = NULL, *ctrlkey = NULL;
+	const char *keyring = NULL, *tls_key = NULL, *tls_key_identity = NULL;
 
 	attr_obj = json_object_object_get(port_obj, "transport");
 	if (!attr_obj)
 		return;
-	fctx.transport = json_object_get_string(attr_obj);
+	fa->transport = json_object_get_string(attr_obj);
 	attr_obj = json_object_object_get(port_obj, "traddr");
 	if (attr_obj)
-		fctx.traddr = json_object_get_string(attr_obj);
+		fa->traddr = json_object_get_string(attr_obj);
 	attr_obj = json_object_object_get(port_obj, "host_traddr");
 	if (attr_obj)
-		fctx.host_traddr = json_object_get_string(attr_obj);
+		fa->host_traddr = json_object_get_string(attr_obj);
 	attr_obj = json_object_object_get(port_obj, "host_iface");
 	if (attr_obj)
-		fctx.host_iface = json_object_get_string(attr_obj);
+		fa->host_iface = json_object_get_string(attr_obj);
 	attr_obj = json_object_object_get(port_obj, "trsvcid");
 	if (attr_obj)
-		fctx.trsvcid = json_object_get_string(attr_obj);
-	c = nvme_lookup_ctrl(s, &fctx, NULL);
-	if (!c)
-		return;
-	json_update_attributes(&c->cfg, port_obj);
+		fa->trsvcid = json_object_get_string(attr_obj);
+	fctx = nvmf_context_lookup(ctx, fa->subsysnqn, fa->transport,
+				   fa->traddr, fa->trsvcid,
+				   fa->host_traddr, fa->host_iface);
+	if (!fctx) {
+		if (nvmf_context_create(ctx, NULL, NULL, NULL, NULL, &fctx))
+			return;
+		nvmf_context_set_connection(fctx, fa->subsysnqn, fa->transport,
+					    fa->traddr, fa->trsvcid,
+					    fa->host_traddr, fa->host_iface);
+	}
+	cfg = nvmf_context_get_fabrics_config(fctx);
+	json_update_attributes(cfg, port_obj);
 	attr_obj = json_object_object_get(port_obj, "discovery");
-	if (attr_obj && !nvme_ctrl_get_discovery_ctrl(c))
-		nvme_ctrl_set_discovery_ctrl(c, true);
+	if (attr_obj)
+		fctx->discovery = json_object_get_boolean(attr_obj);
 	attr_obj = json_object_object_get(port_obj, "dhchap_key");
 	if (attr_obj)
-		nvme_ctrl_set_dhchap_host_key(c, json_object_get_string(attr_obj));
+		hostkey = json_object_get_string(attr_obj);
 	attr_obj = json_object_object_get(port_obj, "dhchap_ctrl_key");
 	if (attr_obj)
-		nvme_ctrl_set_dhchap_ctrl_key(c, json_object_get_string(attr_obj));
+		ctrlkey = json_object_get_string(attr_obj);
 	attr_obj = json_object_object_get(port_obj, "keyring");
 	if (attr_obj)
-		nvme_ctrl_set_keyring(c, json_object_get_string(attr_obj));
+		keyring = json_object_get_string(attr_obj);
 	attr_obj = json_object_object_get(port_obj, "tls_key_identity");
 	if (attr_obj) {
-		nvme_ctrl_set_tls_key_identity(c,
-			json_object_get_string(attr_obj));
+		tls_key_identity = json_object_get_string(attr_obj);
 	}
 	attr_obj = json_object_object_get(port_obj, "tls_key");
 	if (attr_obj) {
-		nvme_ctrl_set_tls_key(c,
-			json_object_get_string(attr_obj));
+		tls_key = json_object_get_string(attr_obj);
 	}
+	nvmf_context_set_crypto(fctx, hostkey, ctrlkey,
+				keyring, tls_key, tls_key_identity);
 }
 
-static void json_parse_subsys(nvme_host_t h, struct json_object *subsys_obj)
+static void json_parse_subsys(struct nvme_global_ctx *ctx,
+		struct json_object *subsys_obj)
 {
 	struct json_object *nqn_obj, *app_obj, *port_array;
-	nvme_subsystem_t s;
-	const char *nqn;
+	struct nvmf_args fa = {};
 	int p;
 
 	nqn_obj = json_object_object_get(subsys_obj, "nqn");
 	if (!nqn_obj)
 		return;
-	nqn = json_object_get_string(nqn_obj);
-	s = nvme_lookup_subsystem(h, NULL, nqn);
-	if (!s)
-		return;
+	fa.subsysnqn = json_object_get_string(nqn_obj);
 	app_obj = json_object_object_get(subsys_obj, "application");
 	if (app_obj)
-		nvme_subsystem_set_application(s, json_object_get_string(app_obj));
+		fa.application = json_object_get_string(app_obj);
 
 	port_array = json_object_object_get(subsys_obj, "ports");
 	if (!port_array)
@@ -136,7 +161,7 @@ static void json_parse_subsys(nvme_host_t h, struct json_object *subsys_obj)
 
 		port_obj = json_object_array_get_idx(port_array, p);
 		if (port_obj)
-			json_parse_port(s, port_obj);
+			json_parse_port(ctx, &fa, port_obj);
 	}
 }
 
@@ -170,7 +195,7 @@ static void json_parse_host(struct nvme_global_ctx *ctx, struct json_object *hos
 	for (s = 0; s < json_object_array_length(subsys_array); s++) {
 		subsys_obj = json_object_array_get_idx(subsys_array, s);
 		if (subsys_obj)
-			json_parse_subsys(h, subsys_obj);
+			json_parse_subsys(ctx, subsys_obj);
 	}
 }
 
