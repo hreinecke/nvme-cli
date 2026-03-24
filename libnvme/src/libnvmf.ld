@@ -5,12 +5,12 @@ LIBNVMF_3 {
 		nvmf_add_ctrl;
 		nvmf_adrfam_str;
 		nvmf_cms_str;
-		nvmf_config_modify;
 		nvmf_connect;
 		nvmf_connect_config_json;
 		nvmf_connect_ctrl;
 		nvmf_context_create;
 		nvmf_context_delete;
+		nvmf_context_lookup;
 		nvmf_context_set_connection;
 		nvmf_context_set_crypto;
 		nvmf_context_set_device;

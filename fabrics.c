@@ -937,19 +937,15 @@ int fabrics_config(const char *desc, int argc, char **argv)
 			return -EINVAL;
 		}
 
-		ret = create_common_context(ctx, persistent, &fa,
-			NULL, &fctx);
-		if (ret)
-			return ret;
-
-		nvmf_context_set_fabrics_config(fctx, &cfg);
-
-		ret = nvmf_config_modify(ctx, fctx);
-		nvmf_context_delete(fctx);
-		if (ret) {
-			fprintf(stderr, "failed to update config\n");
-			return ret;
+		fctx = nvmf_context_lookup(ctx, fa.subsysnqn, fa.transport,
+					   fa.traddr, fa.trsvcid,
+					   fa.host_traddr, fa.host_iface);
+		if (!fctx) {
+			fprintf(stderr,
+				"No matching context found\n");
+			return -EINVAL;
 		}
+		nvmf_context_set_fabrics_config(fctx, &cfg);
 	}
 
 	if (update_config) {

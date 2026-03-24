@@ -330,6 +330,53 @@ __public int nvmf_context_set_connection(struct nvmf_context *fctx,
 	return 0;
 }
 
+__public struct nvmf_context *nvmf_context_lookup(struct nvme_global_ctx *ctx,
+		const char *subsysnqn, const char *transport,
+		const char *traddr, const char *trsvcid,
+		const char *host_traddr, const char *host_iface)
+{
+	struct nvmf_context *fctx;
+
+	list_for_each(&ctx->contexts, fctx, entry) {
+		if (strcmp(fctx->subsysnqn, subsysnqn))
+			continue;
+		if (strcmp(fctx->transport, transport))
+			continue;
+		if (!traddr)
+			return fctx;
+		if (!strcmp(transport, "loop")) {
+			if (traddr &&
+			    strcmp(fctx->traddr, traddr))
+				continue;
+			return fctx;
+		}
+		if (strcmp(fctx->traddr, traddr))
+			continue;
+
+		if (!strcmp(transport, "fc") &&
+		    !strcmp(fctx->host_traddr, host_traddr))
+			return fctx;
+
+		if (strcmp(fctx->trsvcid, trsvcid))
+			continue;
+
+		if (!host_traddr) {
+			if (!host_iface)
+				return fctx;
+		} else if (!fctx->host_traddr ||
+			   strcmp(fctx->host_traddr, host_traddr))
+			continue;
+
+		if (!host_iface) {
+			if (!fctx->host_iface)
+				return fctx;
+		} else if (fctx->host_iface &&
+			   !strcmp(fctx->host_iface, host_iface))
+			return fctx;
+	}
+	return NULL;
+}
+
 __public int nvmf_context_set_hostnqn(struct nvmf_context *fctx,
 		const char *hostnqn, const char *hostid)
 {
@@ -2375,52 +2422,6 @@ __public int nvmf_discovery_config_file(struct nvme_global_ctx *ctx,
 
 	if (err != -EOF)
 		return err;
-
-	return 0;
-}
-
-__public int nvmf_config_modify(struct nvme_global_ctx *ctx,
-		struct nvmf_context *fctx)
-{
-	_cleanup_free_ char *hnqn = NULL;
-	_cleanup_free_ char *hid = NULL;
-	struct nvme_host *h;
-	struct nvme_subsystem *s;
-	struct nvme_ctrl *c;
-
-	if (!fctx->hostnqn)
-		fctx->hostnqn = hnqn = nvme_read_hostnqn();
-	if (!fctx->hostid && hnqn)
-		fctx->hostid = hid = nvme_read_hostid();
-
-	h = nvme_lookup_host(ctx, fctx->hostnqn, fctx->hostid);
-	if (!h) {
-		nvme_msg(ctx, LOG_ERR, "Failed to lookup host '%s'\n",
-			fctx->hostnqn);
-		return -ENODEV;
-	}
-
-	if (fctx->hostkey)
-		nvme_host_set_dhchap_host_key(h, fctx->hostkey);
-
-	s = nvme_lookup_subsystem(h, NULL, fctx->subsysnqn);
-	if (!s) {
-		nvme_msg(ctx, LOG_ERR, "Failed to lookup subsystem '%s'\n",
-			fctx->subsysnqn);
-		return -ENODEV;
-	}
-
-	c = nvme_lookup_ctrl(s, fctx, NULL);
-	if (!c) {
-		nvme_msg(ctx, LOG_ERR, "Failed to lookup controller\n");
-		return -ENODEV;
-	}
-	if (fctx->ctrlkey)
-		nvme_ctrl_set_dhchap_ctrl_key(c, fctx->ctrlkey);
-
-	nvme_parse_tls_args(fctx, &fctx->cfg, c);
-
-	nvmf_update_config(c, &fctx->cfg);
 
 	return 0;
 }

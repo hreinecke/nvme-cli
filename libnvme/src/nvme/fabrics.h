@@ -388,6 +388,23 @@ int nvmf_context_create(struct nvme_global_ctx *ctx,
 void nvmf_context_delete(struct nvmf_context *fctx);
 
 /**
+ * nvmf_context_lookup - Return an existing fabrics context
+ * @ctx: Global context
+ * @subsysnqn: Subsystem NQN
+ * @transport: Transport type
+ * @traddr: Transport address
+ * @trsvcid: Transport service ID
+ * @host_traddr: Host transport address
+ * @host_iface: Host interface
+ *
+ * Returns the matching fabrics context or NULL if not found.
+ */
+struct nvmf_context *nvmf_context_lookup(struct nvme_global_ctx *ctx,
+		const char *subsysnqn, const char *transport,
+		const char *traddr, const char *trsvcid,
+		const char *host_traddr, const char *host_iface);
+
+/**
  * nvmf_context_set_discovery_cbs() - Set discovery callbacks for context
  * @fctx: Fabrics context
  * @discovery_log: Callback for discovery log events
@@ -593,19 +610,6 @@ int nvmf_connect(struct nvme_global_ctx *ctx, struct nvmf_context *fctx);
  * Return: 0 on success, or a negative error code on failure.
  */
 int nvmf_connect_config_json(struct nvme_global_ctx *ctx,
-		struct nvmf_context *fctx);
-
-/**
- * nvmf_config_modify() - Modify and update the configurtion
- * @ctx: Global context
- * @fctx: Fabrics context
- *
- * Update the current configuration by adding the crypto
- * information.
- *
- * Return: 0 on success, or a negative error code on failure.
- */
-int nvmf_config_modify(struct nvme_global_ctx *ctx,
 		struct nvmf_context *fctx);
 
 struct nbft_file_entry;
