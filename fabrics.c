@@ -173,7 +173,6 @@ static int setup_common_context(struct nvmf_context *fctx,
 		struct nvmf_args *fa);
 
 struct cb_fabrics_data {
-	struct nvme_fabrics_config *cfg;
 	nvme_print_flags_t flags;
 	char *raw;
 	char **argv;
@@ -272,7 +271,7 @@ static void cb_parser_cleanup(struct nvmf_context *fctx, void *user_data)
 static int cb_parser_next_line(struct nvmf_context *fctx, void *user_data)
 {
 	struct cb_fabrics_data *cfd = user_data;
-	struct nvme_fabrics_config cfg;
+	struct nvme_fabrics_config cfg, *nvmf_cfg;
 	struct nvmf_args fa = {};
 	char *ptr, *p, line[4096];
 	int argc, ret = 0;
@@ -282,7 +281,8 @@ static int cb_parser_next_line(struct nvmf_context *fctx, void *user_data)
 		  OPT_FLAG("persistent",   'p', &persistent, "persistent discovery connection"),
 		  OPT_FLAG("force",          0, &force,      "Force persistent discovery controller creation"));
 
-	memcpy(&cfg, cfd->cfg, sizeof(cfg));
+	nvmf_cfg = nvmf_context_get_fabrics_config(fctx);
+	memcpy(&cfg, nvmf_cfg, sizeof(cfg));
 next:
 	if (fgets(line, sizeof(line), cfd->f) == NULL)
 		return -EOF;
@@ -346,7 +346,6 @@ static int setup_common_context(struct nvmf_context *fctx,
 
 static int create_common_context(struct nvme_global_ctx *ctx,
 		bool persistent, struct nvmf_args *fa,
-		struct nvme_fabrics_config *cfg,
 		void *user_data, struct nvmf_context **fctxp)
 {
 	struct nvmf_context *fctx;
@@ -364,10 +363,6 @@ static int create_common_context(struct nvme_global_ctx *ctx,
 		goto err;
 
 	err = nvmf_context_set_hostnqn(fctx, fa->hostnqn, fa->hostid);
-	if (err)
-		goto err;
-
-	err = nvmf_context_set_fabrics_config(fctx, cfg);
 	if (err)
 		goto err;
 
@@ -392,13 +387,12 @@ err:
 static int create_discovery_context(struct nvme_global_ctx *ctx,
 		bool persistent, const char *device,
 		struct nvmf_args *fa,
-		struct nvme_fabrics_config *cfg,
 		void *user_data, struct nvmf_context **fctxp)
 {
 	struct nvmf_context *fctx;
 	int err;
 
-	err = create_common_context(ctx, persistent, fa, cfg, user_data,
+	err = create_common_context(ctx, persistent, fa, user_data,
 		&fctx);
 	if (err)
 		return err;
@@ -499,8 +493,6 @@ int fabrics_discovery(const char *desc, int argc, char **argv, bool connect)
 		  OPT_STRING("nbft-path",    0, "STR", &nbft_path,    "user-defined path for NBFT tables"),
 		  OPT_STRING("context",      0, "STR", &context,       nvmf_context));
 
-	nvmf_default_config(&cfg);
-
 	ret = argconfig_parse(argc, argv, desc, opts);
 	if (ret)
 		return ret;
@@ -546,12 +538,11 @@ int fabrics_discovery(const char *desc, int argc, char **argv, bool connect)
 	}
 
 	struct cb_fabrics_data dld = {
-		.cfg = &cfg,
 		.flags = flags,
 		.raw = raw,
 	};
 	ret = create_discovery_context(ctx, persistent, device, &fa,
-		&cfg, &dld, &fctx);
+		&dld, &fctx);
 	if (ret)
 		return ret;
 
@@ -664,9 +655,11 @@ do_connect:
 		.raw = raw,
 	};
 	ret = create_common_context(ctx, persistent, &fa,
-		&cfg, &dld, &fctx);
+		&dld, &fctx);
 	if (ret)
 		return ret;
+
+	nvmf_context_set_fabrics_config(fctx, &cfg);
 
 	if (config_file) {
 		ret = nvmf_connect_config_json(ctx, fctx);
@@ -945,9 +938,11 @@ int fabrics_config(const char *desc, int argc, char **argv)
 		}
 
 		ret = create_common_context(ctx, persistent, &fa,
-			&cfg, NULL, &fctx);
+			NULL, &fctx);
 		if (ret)
 			return ret;
+
+		nvmf_context_set_fabrics_config(fctx, &cfg);
 
 		ret = nvmf_config_modify(ctx, fctx);
 		nvmf_context_delete(fctx);

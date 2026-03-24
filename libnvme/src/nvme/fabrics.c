@@ -187,6 +187,57 @@ __public const char *nvmf_cms_str(__u8 cm)
 	return arg_str(cms, ARRAY_SIZE(cms), cm);
 }
 
+#define MERGE_CFG_OPTION(c, n, o, d)			\
+	if ((c)->o == d) (c)->o = (n)->o
+static void merge_config(struct nvme_fabrics_config *ctrl_cfg,
+		const struct nvme_fabrics_config *cfg)
+{
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, nr_io_queues, 0);
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, nr_write_queues, 0);
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, nr_poll_queues, 0);
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, queue_size, 0);
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, keep_alive_tmo, 0);
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, reconnect_delay, 0);
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, ctrl_loss_tmo,
+			  NVMF_DEF_CTRL_LOSS_TMO);
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, fast_io_fail_tmo, 0);
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, tos, -1);
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, keyring, 0);
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, tls_key, 0);
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, duplicate_connect, false);
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, disable_sqflow, false);
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, hdr_digest, false);
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, data_digest, false);
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, tls, false);
+	MERGE_CFG_OPTION(ctrl_cfg, cfg, concat, false);
+}
+
+#define UPDATE_CFG_OPTION(c, n, o, d)			\
+	if ((n)->o != d) (c)->o = (n)->o
+__public void nvmf_update_config(nvme_ctrl_t c, const struct nvme_fabrics_config *cfg)
+{
+	struct nvme_fabrics_config *ctrl_cfg = nvme_ctrl_get_config(c);
+
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, nr_io_queues, 0);
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, nr_write_queues, 0);
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, nr_poll_queues, 0);
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, queue_size, 0);
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, keep_alive_tmo, 0);
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, reconnect_delay, 0);
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, ctrl_loss_tmo,
+			  NVMF_DEF_CTRL_LOSS_TMO);
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, fast_io_fail_tmo, 0);
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, tos, -1);
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, keyring, 0);
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, tls_key, 0);
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, duplicate_connect, false);
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, disable_sqflow, false);
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, hdr_digest, false);
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, data_digest, false);
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, tls, false);
+	UPDATE_CFG_OPTION(ctrl_cfg, cfg, concat, false);
+}
+
 __public int nvmf_context_create(struct nvme_global_ctx *ctx,
 		bool (*decide_retry)(struct nvmf_context *fctx, int err,
 			void *user_data),
@@ -208,9 +259,9 @@ __public int nvmf_context_create(struct nvme_global_ctx *ctx,
 	fctx->connected = connected;
 	fctx->already_connected = already_connected;
 	fctx->ctx = ctx;
+	nvmf_default_config(&fctx->cfg);
 
 	fctx->user_data = user_data;
-
 	list_add_tail(&ctx->contexts, &fctx->entry);
 	*fctxp = fctx;
 	return 0;
@@ -251,10 +302,15 @@ __public int nvmf_context_set_discovery_defaults(struct nvmf_context *fctx,
 	return 0;
 }
 
+__public struct nvme_fabrics_config *nvmf_context_get_fabrics_config(struct nvmf_context *fctx)
+{
+	return &fctx->cfg;
+}
+
 __public int nvmf_context_set_fabrics_config(struct nvmf_context *fctx,
 		struct nvme_fabrics_config *cfg)
 {
-	fctx->cfg = *cfg;
+	merge_config(&fctx->cfg, cfg);
 
 	return 0;
 }
@@ -359,57 +415,6 @@ static const struct nvme_fabric_options default_supported_options = {
 	.transport = true,
 	.trsvcid = true,
 };
-
-#define MERGE_CFG_OPTION(c, n, o, d)			\
-	if ((c)->o == d) (c)->o = (n)->o
-static void merge_config(struct nvme_fabrics_config *ctrl_cfg,
-		const struct nvme_fabrics_config *cfg)
-{
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, nr_io_queues, 0);
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, nr_write_queues, 0);
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, nr_poll_queues, 0);
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, queue_size, 0);
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, keep_alive_tmo, 0);
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, reconnect_delay, 0);
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, ctrl_loss_tmo,
-			  NVMF_DEF_CTRL_LOSS_TMO);
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, fast_io_fail_tmo, 0);
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, tos, -1);
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, keyring, 0);
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, tls_key, 0);
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, duplicate_connect, false);
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, disable_sqflow, false);
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, hdr_digest, false);
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, data_digest, false);
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, tls, false);
-	MERGE_CFG_OPTION(ctrl_cfg, cfg, concat, false);
-}
-
-#define UPDATE_CFG_OPTION(c, n, o, d)			\
-	if ((n)->o != d) (c)->o = (n)->o
-__public void nvmf_update_config(nvme_ctrl_t c, const struct nvme_fabrics_config *cfg)
-{
-	struct nvme_fabrics_config *ctrl_cfg = nvme_ctrl_get_config(c);
-
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, nr_io_queues, 0);
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, nr_write_queues, 0);
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, nr_poll_queues, 0);
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, queue_size, 0);
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, keep_alive_tmo, 0);
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, reconnect_delay, 0);
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, ctrl_loss_tmo,
-			  NVMF_DEF_CTRL_LOSS_TMO);
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, fast_io_fail_tmo, 0);
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, tos, -1);
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, keyring, 0);
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, tls_key, 0);
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, duplicate_connect, false);
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, disable_sqflow, false);
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, hdr_digest, false);
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, data_digest, false);
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, tls, false);
-	UPDATE_CFG_OPTION(ctrl_cfg, cfg, concat, false);
-}
 
 static int __add_bool_argument(char **argstr, char *tok, bool arg)
 {

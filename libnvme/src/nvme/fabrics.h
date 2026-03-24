@@ -424,6 +424,14 @@ int nvmf_context_set_discovery_defaults(struct nvmf_context *fctx,
 		int max_discovery_retries, int keep_alive_timeout);
 
 /**
+ * nvmf_context_get_fabrics_config() - Get fabrics configuration for context
+ * @fctx: Fabrics context
+ *
+ * Return: Pointer to the fabrics configuration or NULL on failure
+ */
+struct nvme_fabrics_config *nvmf_context_get_fabrics_config(struct nvmf_context *fctx);
+
+/**
  * nvmf_context_set_fabrics_config() - Set fabrics configuration for context
  * @fctx: Fabrics context
  * @cfg: Fabrics configuration to apply

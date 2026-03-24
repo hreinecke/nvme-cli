@@ -16,6 +16,7 @@ LIBNVMF_3 {
 		nvmf_context_set_device;
 		nvmf_context_set_discovery_cbs;
 		nvmf_context_set_discovery_defaults;
+		nvmf_context_get_fabrics_config;
 		nvmf_context_set_fabrics_config;
 		nvmf_context_set_hostnqn;
 		nvmf_context_set_persistent;
